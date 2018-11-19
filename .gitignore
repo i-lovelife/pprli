@@ -1,5 +1,5 @@
 # Custom config
-external_data/
+./data/**
 experiments/
 pprli_env/
 **/*.swp
