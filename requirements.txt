@@ -15,7 +15,7 @@ pathlib2
 
 # data-science
 jupyterlab
-matplotlib
+matplotlib==3.0.0
 tqdm
 opencv-python
 h5py
