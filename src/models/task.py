@@ -102,7 +102,7 @@ class FergTask(Task):
         return acc
     def load_data(self, data_loader, debug):
         if debug:
-            train_data, test_data = data_loader.load_data(max_train=100, max_test=100)
+            train_data, test_data = data_loader.load_data(max_train=500, max_test=500)
         else:
             train_data, test_data = data_loader.load_data()
         num_y, num_p = data_loader.get_num_classes()
