@@ -32,10 +32,13 @@ gan-qp for ferg dataset
 """
 class GanQp(FergTask):
     """
-    expect: able to generate sharp images according to p_fake, but fail to retain other face expression information
-    further reading: ALI, cycle gan
+    GanQp from kexue.fm
     """
-    def __init__(self, data_loader, variation=True, z_dim=128, debug=False):
+    def __init__(self,
+                 data_loader,
+                 variation=True,
+                 z_dim=128,
+                 debug=False):
         self.z_dim = z_dim
         self.variation = variation
         super().__init__(data_loader, debug)
@@ -48,6 +51,7 @@ class GanQp(FergTask):
         max_num_channels = img_dim * 4
         f_size = img_dim // 2**(num_layers + 1)
       
+        # d_model
         x_in = Input(shape=(img_dim, img_dim, 3))
         x = x_in
 
@@ -68,7 +72,7 @@ class GanQp(FergTask):
         d_model = Model(x_in, x)
 
 
-        # 生成器
+        # g_model
         z_in = Input(shape=(z_dim, ))
         z = z_in
 
@@ -95,7 +99,7 @@ class GanQp(FergTask):
         g_model = Model(z_in, z)
 
 
-        # 整合模型（训练判别器）
+        # d_train_model
         x_in = Input(shape=(img_dim, img_dim, 3))
         z_in = Input(shape=(z_dim, ))
         g_model.trainable = False
@@ -117,7 +121,7 @@ class GanQp(FergTask):
         d_train_model.compile(optimizer=Adam(2e-4, 0.5))
 
 
-        # 整合模型（训练生成器）
+        # g_train_model 
         g_model.trainable = True
         d_model.trainable = False
 
@@ -160,11 +164,17 @@ class GanQp(FergTask):
     def predict(self, z):
         g_model, d_model, d_train_model, g_train_model = self.model
         return g_model.predict(z)
-    def train(self, experiment_dir=None, total_iter=20000, batch_size=128, sample_iter=100, model_save_iter=1000):
-        sample_dir = experiment_dir / 'sample'
-        sample_dir.mkdir(parents=True, exist_ok=True)
-        model_dir = experiment_dir / 'models'
-        model_dir.mkdir(parents=True, exist_ok=True)
+    def train(self,
+              experiment_dir=None,
+              total_iter=20000,
+              batch_size=128,
+              sample_iter=100,
+              model_save_iter=1000):
+        if experiment_dir is not None:
+            sample_dir = experiment_dir / 'sample'
+            sample_dir.mkdir(parents=True, exist_ok=True)
+            model_dir = experiment_dir / 'models'
+            model_dir.mkdir(parents=True, exist_ok=True)
         
         z_dim = self.z_dim
         g_model, d_model, d_train_model, g_train_model = self.model
@@ -189,9 +199,9 @@ class GanQp(FergTask):
                 cur_time = now
                 #import pdb;pdb.set_trace()
                 print(f'iter{i} g_loss={g_loss:.2f} d_loss={d_loss:.2f}')
-            if i % sample_iter == 0:
+            if sample_iter > 0 and i % sample_iter == 0:
                 self.sample_all(sample_dir / f'{i}.png')
-            if model_save_iter >0 and i % model_save_iter == 0:
+            if model_save_iter > 0 and i % model_save_iter == 0:
                 self.save_weights(model_dir/f'{i}')
     def save_weights(self, path):
         combined_path = Path(str(path) + 'combined.h5')
@@ -230,7 +240,7 @@ def main(gpu, rand_seed):
     pass
 
 @main.command()
-@click.option('--name', type=str, default='0')
+@click.option('--name', type=str, default='gan_qp')
 @click.option('--epoch', type=int, default=20000)
 @click.option('--batch_size', type=int, default=128)
 @click.option('--sample_iter', type=int, default=100)
@@ -247,22 +257,35 @@ def train(name,
           model_save_iter=1000,
           variation=True,
           recover_dir=None,
-          test=False
+          test=True
          ):
-    name = 'gan_qp' + name
-    experiment_dir = EXPERIMENT_ROOT / name
-    experiment_dir.mkdir(parents=True, exist_ok=True)
-    prepareLogger(experiment_dir/'train_log.txt')
-    print('train')
+    experiment_dir = None
+    if not debug:
+        experiment_dir = EXPERIMENT_ROOT / name
+        experiment_dir.mkdir(parents=True, exist_ok=True)
+        prepareLogger(experiment_dir/'train_log.txt')
+        print('train')
+    else:
+        model_save_iter = -1
+        sample_iter = -1
+        epoch = 2
+        batch_size = 2
+        test=False
+        print('debug train')
     loader = load_ferg()
     gan_qp = GanQp(loader, variation=variation, debug=debug)
     if recover_dir is not None:
         gan_qp.load_weights(recover_dir)
-    gan_qp.train(experiment_dir, total_iter=epoch, batch_size=batch_size, sample_iter=sample_iter, model_save_iter=model_save_iter)
+    gan_qp.train(experiment_dir=experiment_dir,
+                 total_iter=epoch,
+                 batch_size=batch_size,
+                 sample_iter=sample_iter,
+                 model_save_iter=model_save_iter)
     if test:
         acc_y_on_x = gan_qp.evaluate_y_on_x()
         acc_p_on_x = gan_qp.evaluate_p_on_x()
-        print(f'acc_y_on_x = {acc_y_on_x}, acc_p_on_x={acc_p_on_x}')
+        print(f'acc_y_on_x = {acc_y_on_x},\
+                acc_p_on_x={acc_p_on_x}')
 
 
 @main.command()
