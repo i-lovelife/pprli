@@ -177,6 +177,7 @@ class GanQp(FergTask):
         g_model, d_model, d_train_model, g_train_model = self.model
         x_train, y_train, p_train = self.train_data
         z_dim = self.z_dim
+        num_p = self.num_p
         img_dim = self.img_dim
         num_row = 9
         z = np.random.randn(num_row**2, z_dim)
