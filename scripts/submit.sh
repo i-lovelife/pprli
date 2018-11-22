@@ -22,11 +22,3 @@ echo "#$(git rev-parse HEAD)" >> $PBS_PATH
 cd $EXPERIMENT_DIR
 jobid=$(qsub $PBS_PATH)
 echo $jobid
-<<COMMENT
-#Todo: figure out how to get expected file name
-expected=$NAME.pbs.e$jobid
-while [ ! -f "$expected" ]
-do
-    inotifywait -qqt 2 -e create -e moved_to "$(dirname $expected)"
-done
-COMMENT
