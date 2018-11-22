@@ -1,12 +1,11 @@
 #!/bin/bash
 #usage: submit.sh $EXPERIMENT_NAME $YOUR_COMMAND
 ROOT_DIR="/project/RDS-FEI-NLH-RW/work/pprli/"
-NAME=$1-$(date '+%Y-%m-%d-%H:%M:%S')
+NAME=$1-$(date '+%Y-%m-%d-%H-%M-%S')
 EXPERIMENT_DIR=$ROOT_DIR/experiments/$NAME
 PBS_PATH=$ROOT_DIR/hpc_scripts/$NAME.pbs
-echo $PBS_PATH
 COMMAND=${@:2}
-echo ${@:2}
+echo "$COMMAND"
 $COMMAND --debug
 if [ "$?" -gt 0 ]; then
     echo "Fail because command don't pass debug test"
@@ -22,6 +21,7 @@ git push
 echo "#$(git rev-parse HEAD)" >> $PBS_PATH
 cd $EXPERIMENT_DIR
 jobid=$(qsub $PBS_PATH)
+echo $jobid
 <<COMMENT
 #Todo: figure out how to get expected file name
 expected=$NAME.pbs.e$jobid
