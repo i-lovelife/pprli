@@ -44,6 +44,7 @@ class FergTask(Task):
         self.num_test = num_test
         self.train_data = train_data
         self.test_data = test_data
+        self.debug = debug
         #build model
         self.model = self.build_model()
     @staticmethod
