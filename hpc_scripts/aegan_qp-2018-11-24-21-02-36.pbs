@@ -7,5 +7,4 @@
 cd "/project/RDS-FEI-NLH-RW/work/pprli/"
 module load cuda/9.1.85 openmpi-gcc/3.0.0-cuda python/3.6.5
 source pprli_env/bin/activate
-python src/models/cwgan_qp.py train --name cwgan_qp-2018-11-23-00-50-26
-#4fc9580fa70251e84f3fd20cdf2b23428800e91e
+python src/models/aegan_qp.py train --name aegan_qp-2018-11-24-21-02-36

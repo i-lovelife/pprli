@@ -30,9 +30,9 @@ import click
 """
 gan-qp for ferg dataset
 """
-class CganQp(FergTask):
+class AeganQp(FergTask):
     """
-    CganQp from kexue.fm
+    AeganQp from kexue.fm
     """
     def __init__(self,
                  data_loader,
@@ -77,9 +77,26 @@ class CganQp(FergTask):
 
 
         # g_model
-        z_in = Input(shape=(z_dim, ))
+        x_in = Input(shape=(img_dim, img_dim, 3))
         p_in = Input(shape=(num_p, ))
-        z = Concatenate()([z_in, p_in])
+        
+        x = x_in
+        for i in range(num_layers + 1):
+            num_channels = max_num_channels // 2**(num_layers - i)
+            x = Conv2D(num_channels,
+                       (5, 5),
+                       strides=(2, 2),
+                       use_bias=False,
+                       padding='same')(x)
+            if i > 0:
+                x = BatchNormalization()(x)
+            x = LeakyReLU(0.2)(x)
+
+        x = Flatten()(x)
+        z = Dense(z_dim)(x)
+        latent_code = z
+
+        z = Concatenate()([z, p_in])
 
         z = Dense(f_size**2 * max_num_channels)(z)
         z = BatchNormalization()(z)
@@ -101,26 +118,27 @@ class CganQp(FergTask):
                             padding='same')(z)
         z = Activation('tanh')(z)
 
-        g_model = Model([z_in, p_in], z)
+        g_model = Model([x_in, p_in], [z, latent_code])
 
 
         # d_train_model
-        x_in = Input(shape=(img_dim, img_dim, 3))
-        p_real = Input(shape=(num_p, ))
-        p_fake = Input(shape=(num_p, ))
-        z_in = Input(shape=(z_dim, ))
         g_model.trainable = False
 
-        x_real = x_in
-        x_fake = g_model([z_in, p_fake])
+        x_real_in = Input(shape=(img_dim, img_dim, 3 ))
+        x_fake_in = Input(shape=(img_dim, img_dim, 3 ))
+        p_real = Input(shape=(num_p, ))
+        p_fake = Input(shape=(num_p, ))
+
+        x_real, latent_code_real = g_model([x_real_in, p_real])
+        x_fake, latent_code_fake = g_model([x_fake_in, p_fake])
 
         x_real_score = d_model(x_real)
         x_fake_score = d_model(x_fake)
-
+        
         p_real_score = p_model(x_real)
         p_fake_score = p_model(x_fake)
 
-        d_train_model = Model([x_in, z_in, p_real, p_fake],
+        d_train_model = Model([x_real_in, x_fake_in, p_real, p_fake],
                               [x_real_score, x_fake_score, p_real_score, p_fake_score])
 
         d_loss = x_real_score - x_fake_score
@@ -139,23 +157,27 @@ class CganQp(FergTask):
         g_model.trainable = True
         d_model.trainable = False
 
-        x_real = x_in
+        x_real_in = Input(shape=(img_dim, img_dim, 3 ))
+        x_fake_in = Input(shape=(img_dim, img_dim, 3 ))
         p_real = Input(shape=(num_p, ))
         p_fake = Input(shape=(num_p, ))
-        x_fake = g_model([z_in, p_fake])
+        x_real, latent_code_real = g_model([x_real_in, p_real])
+        x_fake, latent_code_fake = g_model([x_fake_in, p_fake])
 
         x_real_score = d_model(x_real)
         x_fake_score = d_model(x_fake)
+       
         p_real_score = p_model(x_real)
         p_fake_score = p_model(x_fake)
 
-        g_train_model = Model([x_in, z_in, p_real, p_fake],
+        g_train_model = Model([x_real_in, x_fake_in, p_real, p_fake],
                               [x_real_score, x_fake_score, p_real_score, p_fake_score])
 
         g_loss = K.mean(x_real_score - x_fake_score)
         p_loss = K.mean(categorical_crossentropy(p_real, p_real_score) + \
                         categorical_crossentropy(p_fake, p_fake_score))
-        loss = 0.5 * (g_loss + p_loss)
+        rec_loss = K.mean(mean_squared_error(x_real_in, x_real))
+        loss = (g_loss + p_loss + rec_loss) / 3.
 
         g_train_model.add_loss(loss)
         g_train_model.compile(optimizer=Adam(2e-4, 0.5))
@@ -180,10 +202,10 @@ class CganQp(FergTask):
         num_p = self.num_p
         img_dim = self.img_dim
         num_row = 9
-        z = np.random.randn(num_row**2, z_dim)
+        x_sample = self.sample_x(num_row**2)
         p = np.random.choice(num_p, num_row**2)
         p = to_categorical(p)
-        predicted = g_model.predict([z, p])
+        predicted = self.predict(x_sample, p)
         output = np.zeros((2*num_row*img_dim, num_row*img_dim, 3))
         for i in range(num_row):
             for j in range(num_row):
@@ -198,14 +220,12 @@ class CganQp(FergTask):
         idx = np.random.choice(x_train.shape[0], num, replace=False)
         return x_train[idx]
     def predict(self, x, p=None):
-        z_dim = self.z_dim
-        z = np.random.randn(x.shape[0], z_dim)
+        num_p = self.num_p
         if p is None:
-            num_p = self.num_p
             p = np.random.choice(num_p, x.shape[0])
             p = to_categorical(p)
         g_model, d_model, d_train_model, g_train_model = self.model
-        return g_model.predict([z, p])
+        return g_model.predict([x, p])[0]
     def train(self,
               experiment_dir=None,
               total_iter=20000,
@@ -223,25 +243,27 @@ class CganQp(FergTask):
         g_model, d_model, d_train_model, g_train_model = self.model
         x_train, y_train, p_train = self.train_data
         
+        def generate_data():
+            idx_real = np.random.choice(x_train.shape[0], batch_size, replace=False)
+            idx_fake = np.random.choice(x_train.shape[0], batch_size, replace=False)
+            x_real = x_train[idx_real]
+            x_fake = x_train[idx_fake]
+
+            p_real = p_train[idx_real]
+            p_fake = np.random.choice(num_p, batch_size)
+            p_fake = to_categorical(p_fake, num_classes=num_p)
+            return x_real, x_fake, p_real, p_fake
+
         cur_time = time.clock()
         log_iter = 10
+
         for i in range(total_iter):
             for j in range(2):
-                idx = np.random.choice(x_train.shape[0], batch_size, replace=False)
-                x_sample = x_train[idx]
-                p_real = p_train[idx]
-                z_sample = np.random.randn(batch_size, z_dim)
-                p_fake = np.random.choice(num_p, batch_size)
-                p_fake = to_categorical(p_fake, num_classes=num_p)
-                d_loss = d_train_model.train_on_batch([x_sample, z_sample, p_real, p_fake], None)
+                x_real, x_fake, p_real, p_fake = generate_data()
+                d_loss = d_train_model.train_on_batch([x_real, x_fake, p_real, p_fake], None)
             for j in range(1):
-                idx = np.random.choice(x_train.shape[0], batch_size, replace=False)
-                x_sample = x_train[idx]
-                p_real = p_train[idx]
-                z_sample = np.random.randn(len(x_sample), z_dim)
-                p_fake = np.random.choice(num_p, batch_size)
-                p_fake = to_categorical(p_fake, num_classes=num_p)
-                g_loss = g_train_model.train_on_batch([x_sample, z_sample, p_real, p_fake], None)
+                x_real, x_fake, p_real, p_fake = generate_data()
+                g_loss = g_train_model.train_on_batch([x_real, x_fake, p_real, p_fake], None)
             if i % log_iter == 0:
                 now = time.clock()
                 elapsed = now - cur_time
@@ -266,20 +288,8 @@ class CganQp(FergTask):
         combined_path = Path(str(path) + 'combined.h5')
         combined = self.model[-1]
         combined.load_weights(combined_path)
-    def evaluate(self, batch_size=None, num_epochs=None):
-        x_train, y_train, p_train = self.train_data
-        x_test, y_test, p_test = self.test_data
-
-        num_p = self.num_p
-        p_fake = np.random.choice(num_p, x_test.shape[0])
-        p_fake = to_categorical(p_fake)
-        x_test = self.predict(x_test, p=p_fake)
-        p_test = p_fake
-        resnet = resnet_v1(self.input_shape, self.num_p)
-        history = resnet.fit(x_train, p_train, validation_data=(x_test, p_test), \
-                             batch_size=batch_size, epochs=num_epochs)
-
-        acc = np.max(history.history['val_acc'])
+    def evaluate(self):
+        acc = self.evaluate_p_on_x()
         print(acc)
     def summary(self):
         for model in self.model:
@@ -302,7 +312,7 @@ def main(gpu, rand_seed):
     pass
 
 @main.command()
-@click.option('--name', type=str, default='cgan_qp')
+@click.option('--name', type=str, default='aegan_qp')
 @click.option('--epoch', type=int, default=20000)
 @click.option('--batch_size', type=int, default=128)
 @click.option('--sample_iter', type=int, default=100)
@@ -335,39 +345,38 @@ def train(name,
         test=True
         print('debug train')
     loader = load_ferg()
-    cgan_qp = CganQp(loader, variation=variation, debug=debug)
+    aegan_qp = AeganQp(loader, variation=variation, debug=debug)
     if recover_dir is not None:
-        cgan_qp.load_weights(recover_dir)
-    cgan_qp.train(experiment_dir=experiment_dir,
+        aegan_qp.load_weights(recover_dir)
+    aegan_qp.train(experiment_dir=experiment_dir,
                  total_iter=epoch,
                  batch_size=batch_size,
                  sample_iter=sample_iter,
                  model_save_iter=model_save_iter)
     if test:
-        cgan_qp.evaluate(batch_size=batch_size)
+        aegan_qp.evaluate()
 
 
 @main.command()
-@click.option('--name', type=str, default='cgan_qp')
+@click.option('--name', type=str, default='aegan_qp')
 @click.option('--iter_no', type=int, default=100)
-@click.option('--epoch', type=int, default=20)
-@click.option('--batch_size', type=int, default=128)
+@click.option('--num_epochs', type=int, default=20)
 @click.option('--debug/--no-debug', default=False)
-def test(name, iter_no=100, debug=False, batch_size=128, epoch=20):
+def test(name, iter_no=100, debug=False, num_epochs=20):
     experiment_dir = EXPERIMENT_ROOT / name
     prepareLogger()
     print('test')
     loader = load_ferg()
-    cgan_qp = CganQp(loader, debug=debug)
-    cgan_qp.load_weights(experiment_dir=experiment_dir, iter_no=iter_no)
-    cgan_qp.evaluate(batch_size=batch_size, num_epochs=epoch)
+    aegan_qp = AeganQp(loader, debug=debug)
+    aegan_qp.load_weights(experiment_dir=experiment_dir, iter_no=iter_no)
+    aegan_qp.evaluate()
 
 @main.command()
 def show():
     print('show')
     loader = load_ferg()
-    cgan_qp = CganQp(loader)
-    cgan_qp.summary()
+    aegan_qp = AeganQp(loader)
+    aegan_qp.summary()
 
 if __name__ == '__main__':
     main()
