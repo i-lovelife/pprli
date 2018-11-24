@@ -288,9 +288,34 @@ class AeganQp(FergTask):
         combined_path = Path(str(path) + 'combined.h5')
         combined = self.model[-1]
         combined.load_weights(combined_path)
-    def evaluate(self):
-        acc = self.evaluate_p_on_x()
-        print(acc)
+    def evaluate(self, batch_size=None, num_epochs=None):
+        num_p = self.num_p
+        num_y = self.num_y
+        input_shape = self.input_shape
+        if batch_size is None:
+            batch_size = 128
+        if num_epochs is None:
+            num_epochs = 20
+        def test_data(x, y, x_dev, y_dev):
+            num_classes = y.shape[1]
+            resnet = resnet_v1(input_shape, num_classes)
+            history = resnet.fit(x, y, validation_data=(x_dev, y_dev), \
+                                 batch_size=batch_size, epochs=num_epochs)
+            acc_val = np.max(history.history['val_acc'])
+            acc_train = np.max(history.history['acc'])
+            return acc_train, acc_val
+        x_train, y_train, p_train = self.train_data
+        x_test, y_test, p_test = self.test_data
+        x_train_encrypted = self.predict(x_train)
+        x_test_encrypted = self.predict(x_test)
+        #evaluate original data can keep y semantic
+        acc_train, acc_val = test_data(x_train, y_train, x_test_encrypted, y_test)
+        print(f'x_train, y_train, x_test_enc, y_test: acc_train = {acc_train}, acc_val= {acc_val}')
+
+        #evaluate original data can hide p information
+        acc_train, acc_val = test_data(x_train_encrypted, p_train, x_test_encrypted, p_test)
+        print(f'x_train_enc, p_train, x_test_enc, p_test: acc_train = {acc_train}, acc_val= {acc_val}')
+
     def summary(self):
         for model in self.model:
             print('-'*80)
