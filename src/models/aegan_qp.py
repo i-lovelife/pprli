@@ -70,10 +70,12 @@ class AeganQp(FergTask):
         
         q = Dense(1, use_bias=False)(x)
         p = Dense(num_p, activation='softmax', use_bias=False)(x)
+        z_pre = Dense(z_dim)(x)
 
 
         d_model = Model(x_in, q)
         p_model = Model(x_in, p)
+        z_model = Model(x_in, z_pre)
 
 
         # g_model
@@ -129,7 +131,7 @@ class AeganQp(FergTask):
         p_real = Input(shape=(num_p, ))
         p_fake = Input(shape=(num_p, ))
 
-        x_real, latent_code_real = g_model([x_real_in, p_real])
+        x_real = x_real_in
         x_fake, latent_code_fake = g_model([x_fake_in, p_fake])
 
         x_real_score = d_model(x_real)
@@ -137,6 +139,8 @@ class AeganQp(FergTask):
         
         p_real_score = p_model(x_real)
         p_fake_score = p_model(x_fake)
+
+        z_fake_predict = z_model(x_fake)
 
         d_train_model = Model([x_real_in, x_fake_in, p_real, p_fake],
                               [x_real_score, x_fake_score, p_real_score, p_fake_score])
@@ -147,7 +151,9 @@ class AeganQp(FergTask):
 
         p_loss = K.mean(categorical_crossentropy(p_real, p_real_score) + \
                         categorical_crossentropy(p_fake, p_fake_score))
-        loss = 0.5 * (d_loss + p_loss)
+        #z_loss = K.mean(mean_squared_error(latent_code_fake, z_fake_predict))
+        #loss = (d_loss + p_loss + z_loss) / 3.
+        loss = (d_loss + p_loss) / 2.
 
         d_train_model.add_loss(loss)
         d_train_model.compile(optimizer=Adam(2e-4, 0.5))
@@ -161,7 +167,7 @@ class AeganQp(FergTask):
         x_fake_in = Input(shape=(img_dim, img_dim, 3 ))
         p_real = Input(shape=(num_p, ))
         p_fake = Input(shape=(num_p, ))
-        x_real, latent_code_real = g_model([x_real_in, p_real])
+        x_real = x_real_in
         x_fake, latent_code_fake = g_model([x_fake_in, p_fake])
 
         x_real_score = d_model(x_real)
@@ -170,14 +176,17 @@ class AeganQp(FergTask):
         p_real_score = p_model(x_real)
         p_fake_score = p_model(x_fake)
 
+        z_fake_predict = z_model(x_fake)
+
         g_train_model = Model([x_real_in, x_fake_in, p_real, p_fake],
                               [x_real_score, x_fake_score, p_real_score, p_fake_score])
 
         g_loss = K.mean(x_real_score - x_fake_score)
         p_loss = K.mean(categorical_crossentropy(p_real, p_real_score) + \
                         categorical_crossentropy(p_fake, p_fake_score))
-        rec_loss = K.mean(mean_squared_error(x_real_in, x_real))
-        loss = (g_loss + p_loss + rec_loss) / 3.
+        #z_loss = K.mean(mean_squared_error(latent_code_fake, z_fake_predict))
+        #loss = (g_loss + p_loss + z_loss) / 3.
+        loss = (g_loss + p_loss) / 2.
 
         g_train_model.add_loss(loss)
         g_train_model.compile(optimizer=Adam(2e-4, 0.5))
@@ -308,13 +317,18 @@ class AeganQp(FergTask):
         x_test, y_test, p_test = self.test_data
         x_train_encrypted = self.predict(x_train)
         x_test_encrypted = self.predict(x_test)
-        #evaluate original data can keep y semantic
-        acc_train, acc_val = test_data(x_train, y_train, x_test_encrypted, y_test)
-        print(f'x_train, y_train, x_test_enc, y_test: acc_train = {acc_train}, acc_val= {acc_val}')
+        
+        #evaluate original data can dig y semantic
+        acc_train3, acc_val3 = test_data(x_train_encrypted, y_train, x_test_encrypted, y_test)
+        print(f'x_train_encrypted, y_train, x_test_enc, y_test: acc_train = {acc_train3}, acc_val= {acc_val3}')
+        #evaluate original model can dig y semantic
+        acc_train1, acc_val1 = test_data(x_train, y_train, x_test_encrypted, y_test)
 
         #evaluate original data can hide p information
-        acc_train, acc_val = test_data(x_train_encrypted, p_train, x_test_encrypted, p_test)
-        print(f'x_train_enc, p_train, x_test_enc, p_test: acc_train = {acc_train}, acc_val= {acc_val}')
+        acc_train2, acc_val2 = test_data(x_train_encrypted, p_train, x_test_encrypted, p_test)
+        
+        print(f'x_train, y_train, x_test_enc, y_test: acc_train = {acc_train1}, acc_val= {acc_val1}')
+        print(f'x_train_enc, p_train, x_test_enc, p_test: acc_train = {acc_train2}, acc_val= {acc_val2}')
 
     def summary(self):
         for model in self.model:
@@ -386,15 +400,16 @@ def train(name,
 @click.option('--name', type=str, default='aegan_qp')
 @click.option('--iter_no', type=int, default=100)
 @click.option('--num_epochs', type=int, default=20)
+@click.option('--batch_size', type=int, default=128)
 @click.option('--debug/--no-debug', default=False)
-def test(name, iter_no=100, debug=False, num_epochs=20):
+def test(name, iter_no=100, debug=False, num_epochs=20, batch_size=128):
     experiment_dir = EXPERIMENT_ROOT / name
     prepareLogger()
     print('test')
     loader = load_ferg()
     aegan_qp = AeganQp(loader, debug=debug)
     aegan_qp.load_weights(experiment_dir=experiment_dir, iter_no=iter_no)
-    aegan_qp.evaluate()
+    aegan_qp.evaluate(batch_size=batch_size, num_epochs=num_epochs)
 
 @main.command()
 def show():
