@@ -2,7 +2,8 @@
 ./data/**
 experiments/
 pprli_env/
-**/*.swp
+hpc_scripts/*.pbs.*
+.*.swp
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
