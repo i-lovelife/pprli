@@ -113,3 +113,19 @@ class FergTask(Task):
         train_data = type(self).transform_data(train_data, num_y, num_p)
         test_data = type(self).transform_data(test_data, num_y, num_p)
         return train_data, test_data, num_y, num_p, num_train, num_test, img_dim, input_shape
+
+class Ferg2PeopleTask(Task):
+    def __init__(self, data_loader, debug=False):
+        #get data
+        train_data, test_data, num_y, num_p, num_train, num_test, img_dim, input_shape = self.load_data(data_loader, debug)
+        #add config      
+        self.img_dim = img_dim
+        self.input_shape = input_shape
+        self.num_y = num_y
+        self.num_p = num_p
+        self.num_train = num_train
+        self.num_test = num_test
+        self.train_data = train_data
+        self.test_data = test_data
+        #build model
+        self.model = self.build_model()

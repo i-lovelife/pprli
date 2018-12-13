@@ -10,6 +10,7 @@ from keras.optimizers import Adam
 from keras.utils import to_categorical
 from keras.callbacks import Callback
 from keras.optimizers import RMSprop
+from keras.metrics import binary_accuracy
 from numpy.random import seed
 from tensorflow import set_random_seed
 from pathlib import Path
@@ -20,21 +21,15 @@ import numpy as np
 from src.data.dataset import load_ferg
 from src.evaluation.resnet import resnet_v1
 from src import PROJECT_ROOT, EXPERIMENT_ROOT
+from src.util.logging import TeeLogger
 import imageio
 import os
 from src.util.callbacks import Evaluate
 from src.models.task import FergTask
 import click
 
-logger = logging.getLogger('aegan')
-logger.setLevel(logging.INFO)
 """
-1. wgan has some problem:
-    1) sometimes loss will become nan
-    2) procedure seems not covergence
-    3) sol: replace wgan with standard gan
-2. reconstruction loss might influence the convergence
-    1) sol: disable reconstruction
+a simple sgan-info baseline
 """
 def empty_loss(y_true, y_pred):
     return y_pred
@@ -66,43 +61,66 @@ def sampling(args):
     dim = K.int_shape(z_mean)[1]
     epsilon = K.random_normal(shape=(batch, dim))
     return z_mean + K.exp(0.5 * z_log_var) * epsilon
-def kl_loss_func(args):
-    z_mean, z_log_var = args
-    loss = - 0.5 * K.sum(1 + z_log_var - K.square(z_mean) - K.exp(z_log_var), axis=-1)
-    return loss
 
-def spectral_norm(w, r=5):
-    w_shape = K.int_shape(w)
-    in_dim = np.prod(w_shape[:-1]).astype(int)
-    out_dim = w_shape[-1]
-    w = K.reshape(w, (in_dim, out_dim))
-    u = K.ones((1, in_dim))
-    for i in range(r):
-        v = K.l2_normalize(K.dot(u, w))
-        u = K.l2_normalize(K.dot(v, K.transpose(w)))
-    return K.sum(K.dot(K.dot(u, w), K.transpose(v)))
-
-
-def spectral_normalization(w):
-    return w / spectral_norm(w)
 
 
 class AeGan(FergTask):
-    def __init__(self, data_loader, z_dim=128, rec_loss_weight=1, debug=False):
+    """
+    expect: able to generate sharp images according to p_fake, but fail to retain other face expression information
+    further reading: ALI, cycle gan
+    """
+    def __init__(self, data_loader, variation=True, z_dim=128, debug=False):
         self.z_dim = z_dim
-        self.rec_loss_weight = rec_loss_weight
+        self.variation = variation
         super().__init__(data_loader, debug)
     def build_model(self):
         input_shape = self.input_shape
         img_dim = self.img_dim
         z_dim = self.z_dim
         num_p = self.num_p
+      
+        losses = ['categorical_crossentropy', 'binary_crossentropy']
+        def kl_loss(y_true, y_pred):
+            z_mean = y_pred[:, 0:z_dim]
+            z_log_var = y_pred[:, z_dim:z_dim+z_dim]
+            loss = - 0.5 * K.sum(1 + z_log_var - K.square(z_mean) - K.exp(z_log_var), axis=-1)
+            return loss
+        def q_metric(y_true, y_pred):
+            return binary_accuracy(K.round(y_true), y_pred)
+        metrics = {'predict_p':'accuracy', 'predict_q': q_metric}
+        #optimizer = RMSprop(lr=0.0003, decay=1e-6)
+        optimizer = Adam(lr=0.003)
+        x_in = Input(input_shape)
+        p_in = Input((num_p,))
         encoder = self.build_encoder(input_shape, z_dim)
+        if self.variation:
+            z, z_mean, z_log_var = encoder(x_in)
+            kl_info = Concatenate()([z_mean, z_log_var])
+        else:
+            z = encoder(x_in)
         decoder = self.build_decoder(z_dim, img_dim, num_p)
+        x_hat_fake = decoder([z, p_in])
         classifier = self.build_classifier(input_shape, num_p, z_dim)
-        generator = self.build_generator(input_shape, num_p, encoder, decoder, classifier)
-        discriminator = self.build_discriminator(input_shape, num_p, classifier)
-        model = [encoder, decoder, classifier, generator, discriminator]
+        predict_p, predict_q = classifier(x_hat_fake)
+        predict_p = Lambda(lambda x:x, name = "predict_p")(predict_p)
+        predict_q = Lambda(lambda x:x, name = "predict_q")(predict_q)
+        
+        classifier.compile(loss=losses,
+                           optimizer=optimizer,
+                           metrics=metrics)
+        classifier.trainable = False
+        if not self.variation:
+            combined = Model([x_in, p_in], [predict_p, predict_q])
+            combined.compile(loss=losses,
+                             optimizer=optimizer,
+                             metrics=metrics)
+        else:
+            combined = Model([x_in, p_in], [predict_p, predict_q, kl_info])
+            combined.compile(loss=losses+[kl_loss],
+                             optimizer=optimizer,
+                             loss_weights=[1., 1., 0.03],
+                             metrics=metrics)
+        model = [encoder, decoder, classifier, combined]
         return model
     def build_encoder(self, input_shape, z_dim):
         x_in = Input(input_shape)
@@ -116,12 +134,12 @@ class AeGan(FergTask):
             x = LeakyReLU(0.2)(x)
             x = MaxPooling2D((2, 2))(x)
         x = GlobalMaxPooling2D()(x)
-        x = Dense(z_dim)(x)
-        return Model(x_in, x)
-        #z_mean = Dense(z_dim)(x)
-        #z_log_var = Dense(z_dim)(x)
-        #sample = Lambda(sampling)([z_mean, z_log_var])
-        #return Model(x_in, [sample, z_mean, z_log_var])
+        z_mean = Dense(z_dim)(x)
+        if not self.variation:
+            return Model(x_in, z_mean)
+        z_log_var = Dense(z_dim)(x)
+        sample = Lambda(sampling)([z_mean, z_log_var])
+        return Model(x_in, [sample, z_mean, z_log_var])
     def build_decoder(self, z_dim, img_dim, num_p):
         k = 8
         units = z_dim
@@ -154,80 +172,23 @@ class AeGan(FergTask):
         for i in range(3):
             x = Conv2D(int(z_dim / 2**(2-i)),
                        kernel_size=(field_size, field_size),
-                       kernel_constraint=spectral_normalization,
                        padding='SAME')(x)
-            x = BatchNormalization(gamma_constraint=spectral_normalization)(x)
+            x = BatchNormalization()(x)
             x = LeakyReLU(0.2)(x)
             x = MaxPooling2D((2, 2))(x)
         x = GlobalMaxPooling2D()(x)
         predict_p = Dense(num_p, activation='softmax')(x)
-        predict_q = Dense(1, use_bias=False, kernel_constraint=spectral_normalization)(x)
+        predict_p = Lambda(lambda x:x, name = "predict_p")(predict_p)
+        predict_q = Dense(1, activation='sigmoid')(x)
+        predict_q = Lambda(lambda x:x, name = "predict_q")(predict_q)
         return Model(x_in, [predict_p, predict_q])
-    def build_generator(self, input_shape, num_p, encoder, decoder, classifier):
-        x_in = Input(shape=input_shape)
-        p_in_real = Input(shape=(num_p,))
-        p_in_fake = Input(shape=(num_p,))
-        x = x_in
-        x = encoder(x)
-        x_hat_fake = decoder([x, p_in_fake])
-        x_hat_real = decoder([x, p_in_real])
-        def mse_loss_func(args):
-            y_true, y_pred = args
-            return K.mean(K.square(y_pred - y_true))
-        mse_loss = Lambda(mse_loss_func, name='mse')([x_hat_real, x_in])
-        fake_p, fake_q = classifier(x_hat_fake)
-        def p_loss_func(args):
-            y_true, y_pred = args
-            return K.mean(categorical_crossentropy(y_true, y_pred))
-        p_loss = Lambda(p_loss_func)([p_in_fake, fake_p])
-        def q_loss_func(args):
-            fake_q = args
-            return K.mean(- fake_q)
-        q_loss = Lambda(q_loss_func)(fake_q)
-        def add_func(args):
-            p_loss, q_loss, mse_loss = args
-            return p_loss + q_loss + self.rec_loss_weight * mse_loss
-        loss = Lambda(add_func)([p_loss, q_loss, mse_loss])
-        model = Model([x_in, p_in_real, p_in_fake], loss)
-        classifier.trainable = False
-        model.compile(RMSprop(lr=0.0003, decay=1e-6), loss=empty_loss)
-        return model
-    def build_discriminator(self, input_shape, num_p, classifier):
-        x_fake = Input(shape=input_shape)
-        p_fake = Input(shape=(num_p,))
-        x_sample = Input(shape=input_shape)
-        p_sample = Input(shape=(num_p,))
-        
-        p_fake_pre, q_fake_pre = classifier(x_fake)
-        p_sample_pre, q_sample_pre = classifier(x_sample)
-        #p_loss
-        def p_loss_func(args):
-            y_true, y_pred = args
-            return K.mean(categorical_crossentropy(y_true, y_pred))
-        p_loss_layer = Lambda(p_loss_func)
-        p_loss_fake = p_loss_layer([p_fake, p_fake_pre])
-        p_loss_sample = p_loss_layer([p_sample, p_sample_pre])
-        def average_loss_func(args):
-            p_loss_fake, p_loss_sample = args
-            return (p_loss_fake+p_loss_sample)/2
-        p_loss = Lambda(average_loss_func)([p_loss_fake, p_loss_sample])
-        #q_loss
-        def q_loss_func(args):
-            q_sample_pre, q_fake_pre = args
-            return K.mean(q_fake_pre - q_sample_pre)
-        q_loss = Lambda(q_loss_func)([q_sample_pre, q_fake_pre])
-        def add_func(args):
-            p_loss, q_loss = args
-            return p_loss+q_loss
-        loss = Lambda(add_func)([p_loss, q_loss])
-        model = Model([x_fake, p_fake, x_sample, p_sample], loss)
-        classifier.trainable = True
-        model.compile(RMSprop(lr=0.0003, decay=1e-6), loss=empty_loss)
-        return model
         
     def predict(self, x, p_fake=None):
-        encoder, decoder, classifier, generator, discriminator = self.model
-        z = encoder.predict(x)
+        encoder, decoder, classifier, combined = self.model
+        if self.variation:
+            z,_,_ = encoder.predict(x)
+        else:
+            z = encoder.predict(x)
         batch_size = x.shape[0]
         if p_fake is None:
             p_fake = np.random.randint(self.num_p, size=batch_size)
@@ -241,7 +202,7 @@ class AeGan(FergTask):
         model_dir.mkdir(parents=True, exist_ok=True)
         
         z_dim = self.z_dim
-        encoder, decoder, classifier, generator, discriminator = self.model
+        encoder, decoder, classifier, combined = self.model
         x_train, y_train, p_train = self.train_data
         
         cur_time = time.clock()
@@ -252,63 +213,62 @@ class AeGan(FergTask):
             p_fake = np.random.randint(self.num_p, size=batch_size)
             p_fake = to_categorical(p_fake, self.num_p)
             x_fake = self.predict(x_train[idx1], p_fake=p_fake)
-            for j in range(2):
-                d_loss = discriminator.train_on_batch([x_fake, p_fake, x_train[idx2], p_train[idx2]], p_train[idx1])
+            q_valid = np.random.uniform(0.9, 1.0, size=(batch_size, 1))
+            q_fake = np.random.uniform(0.0, 0.1, size=(batch_size, 1))
+            
+            d_loss_real = classifier.train_on_batch(x_train[idx2], [p_train[idx2], q_valid])
+            d_loss_fake = classifier.train_on_batch(x_fake, [p_fake, q_fake])
+            d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
             for j in range(1):
                 p_fake = np.random.randint(self.num_p, size=batch_size)
-                p_fake= to_categorical(p_fake, self.num_p)
-                g_loss = generator.train_on_batch([x_train[idx1], p_train[idx1], p_fake], p_train[idx1])
+                p_fake = to_categorical(p_fake, self.num_p)
+                y_target = [p_fake, q_valid]
+                if self.variation:
+                    y_target = [p_fake, q_valid, np.ones((batch_size, z_dim*2))]
+                g_loss = combined.train_on_batch([x_train[idx1], p_fake], y_target)
             if i % log_iter == 0:
                 now = time.clock()
                 elapsed = now - cur_time
                 cur_time = now
-                logger.info(f'iter: {i}, d_loss: {d_loss:.6f}, g_loss: {g_loss:.6f} elapsed: {elapsed:.2f}')
+                #import pdb;pdb.set_trace()
+                print(f'iter: {i}\nd: loss_q={d_loss[2]:.4f} acc_p={d_loss[-2]*100:.2f} acc_q={d_loss[-1]*100:.2f}')
+                if self.variation:
+                    print(f'g: loss= {g_loss[0]:.4f} kl_loss={g_loss[2]:.4f} acc_q={g_loss[-1]*100:.2f}, elapsed: {elapsed:.2f}')
+                else:
+                    print(f'g: loss= {g_loss[0]:.4f} acc_p={g_loss[-2]*100:.2f} acc_q={g_loss[-1]*100:.2f}, elapsed: {elapsed:.2f}')
             if i % sample_iter == 0:
                 self.sample_all(sample_dir / f'{i}.png')
             if model_save_iter >0 and i % model_save_iter == 0:
                 self.save_weights(model_dir/f'{i}')
     def save_weights(self, path):
-        generator_path = Path(str(path) + 'generator.h5')
-        discriminator_path = Path(str(path) + 'discriminator.h5')
-        _,_,_, generator, discriminator = self.model
-        generator.save_weights(generator_path)
-        discriminator.save_weights(discriminator_path)
+        combined_path = Path(str(path) + 'combined.h5')
+        combined = self.model[-1]
+        combined.save_weights(combined_path)
     def load_weights(self, experiment_dir=None, iter_no=None):
         path = experiment_dir / 'models'
         if iter_no is not None:
             path = path/f'{iter_no}'
-        generator_path = Path(str(path) + 'generator.h5')
-        discriminator_path = Path(str(path) + 'discriminator.h5')
-        _,_,_, generator, discriminator = self.model
-        generator.load_weights(generator_path)
-        discriminator.load_weights(discriminator_path)
+        combined_path = Path(str(path) + 'combined.h5')
+        combined = self.model[-1]
+        combined.load_weights(combined_path)
     def summary(self):
-        encoder, decoder, classifier, generator, discriminator = self.model
+        encoder, decoder, classifier, combined = self.model
         print('encoder')
         encoder.summary()
         print('decoder')
         decoder.summary()
         print('classifier')
         classifier.summary()
-        print('generator')
-        generator.summary()
-        print('discriminator')
-        discriminator.summary()
+        print('combined')
+        combined.summary()
 
 def prepareLogger(out_file=None):
     if out_file is not None:
-        print(out_file)
-        file_handler = logging.FileHandler(out_file)
-        file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s'))
-        file_handler.setLevel(logging.INFO)
-        logger.addHandler(file_handler)
-    stream_handler = logging.StreamHandler(sys.stdout)
-    stream_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s'))
-    stream_handler.setLevel(logging.INFO)
-    logger.addHandler(stream_handler)        
+        sys.stdout = TeeLogger(out_file, sys.stdout)
+        sys.stderr = TeeLogger(out_file, sys.stderr)        
     
 @click.group()
-@click.option('--gpu', type=str, default='3')
+@click.option('--gpu', type=str, default='0')
 @click.option('--rand_seed', type=int, default=13141)
 def main(gpu, rand_seed):
     seed(rand_seed)
@@ -322,33 +282,35 @@ def main(gpu, rand_seed):
 @click.option('--batch_size', type=int, default=128)
 @click.option('--sample_iter', type=int, default=100)
 @click.option('--model_save_iter', type=int, default=1000)
-@click.option('--rec_weight', type=int, default=1)
 @click.option('--recover_dir', type=str)
 @click.option('--debug/--no-debug', default=False)
+@click.option('--variation/--no-variation', default=True)
 @click.option('--test/--no-test', default=True)
-def train(name='0', 
+def train(name, 
           epoch=20000, 
           debug=False, 
           batch_size=128, 
           sample_iter=100, 
-          model_save_iter=1000, 
+          model_save_iter=1000,
+          variation=True,
           recover_dir=None,
-          rec_weight=1,
           test=True
          ):
+    name = 'ae_gan' + name
     experiment_dir = EXPERIMENT_ROOT / name
     experiment_dir.mkdir(parents=True, exist_ok=True)
     prepareLogger(experiment_dir/'train_log.txt')
-    logger.info('train')
+    print('train')
+    print(f'{name} aegan without reconstruction loss')
     loader = load_ferg()
-    ae_gan = AeGan(loader, rec_loss_weight=rec_weight, debug=debug)
+    ae_gan = AeGan(loader, variation=variation, debug=debug)
     if recover_dir is not None:
         ae_gan.load_weights(recover_dir)
     ae_gan.train(experiment_dir, total_iter=epoch, batch_size=batch_size, sample_iter=sample_iter, model_save_iter=model_save_iter)
     if test:
         acc_y_on_x = ae_gan.evaluate_y_on_x()
         acc_p_on_x = ae_gan.evaluate_p_on_x()
-        logger.info(f'acc_y_on_x = {acc_y_on_x}, acc_p_on_x={acc_p_on_x}')
+        print(f'acc_y_on_x = {acc_y_on_x}, acc_p_on_x={acc_p_on_x}')
 
 
 @main.command()
@@ -356,20 +318,21 @@ def train(name='0',
 @click.option('--iter_no', type=int, default=100)
 @click.option('--num_epochs', type=int, default=20)
 @click.option('--debug/--no-debug', default=False)
-def test(name='0', iter_no=100, debug=False, num_epochs=20):
+def test(name, iter_no=100, debug=False, num_epochs=20):
+    name = 'ae_gan' + name
     experiment_dir = EXPERIMENT_ROOT / name
     prepareLogger()
-    logger.info('test')
+    print('test')
     loader = load_ferg()
     ae_gan = AeGan(loader, debug=debug)
     ae_gan.load_weights(experiment_dir=experiment_dir, iter_no=iter_no)
     acc_y_on_x = ae_gan.evaluate_y_on_x(num_epochs=num_epochs)
     acc_p_on_x = ae_gan.evaluate_p_on_x(num_epochs=num_epochs)
-    logger.info(f'acc_y_on_x = {acc_y_on_x}, acc_p_on_x={acc_p_on_x}')
+    print(f'acc_y_on_x = {acc_y_on_x}, acc_p_on_x={acc_p_on_x}')
 
 @main.command()
 def show():
-    logger.info('show')
+    print('show')
     loader = load_ferg()
     ae_gan = AeGan(loader)
     ae_gan.summary()
