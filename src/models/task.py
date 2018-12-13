@@ -1,8 +1,5 @@
 import matplotlib.pyplot as plt
-from keras.layers import Input, Lambda, BatchNormalization, Conv2D, Reshape, Dense,\
-                         Dropout, Activation, Flatten, LeakyReLU, Add, MaxPooling2D,\
-                         GlobalMaxPooling2D, Subtract, Concatenate, Average, Conv2DTranspose,\
-                         GlobalAveragePooling2D
+from keras.layers import *
 from keras.losses import categorical_crossentropy, mean_squared_error
 from keras.models import Model
 from keras import backend as K

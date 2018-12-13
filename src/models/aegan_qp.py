@@ -319,15 +319,15 @@ class AeganQp(FergTask):
         x_test_encrypted = self.predict(x_test)
         
         #evaluate original data can dig y semantic
-        acc_train3, acc_val3 = test_data(x_train_encrypted, y_train, x_test_encrypted, y_test)
-        print(f'x_train_encrypted, y_train, x_test_enc, y_test: acc_train = {acc_train3}, acc_val= {acc_val3}')
+        #acc_train3, acc_val3 = test_data(x_train_encrypted, y_train, x_test_encrypted, y_test)
+        #print(f'x_train_encrypted, y_train, x_test_enc, y_test: acc_train = {acc_train3}, acc_val= {acc_val3}')
         #evaluate original model can dig y semantic
-        acc_train1, acc_val1 = test_data(x_train, y_train, x_test_encrypted, y_test)
+        #acc_train1, acc_val1 = test_data(x_train, y_train, x_test_encrypted, y_test)
+        #print(f'x_train, y_train, x_test_enc, y_test: acc_train = {acc_train1}, acc_val= {acc_val1}')
 
         #evaluate original data can hide p information
         acc_train2, acc_val2 = test_data(x_train_encrypted, p_train, x_test_encrypted, p_test)
         
-        print(f'x_train, y_train, x_test_enc, y_test: acc_train = {acc_train1}, acc_val= {acc_val1}')
         print(f'x_train_enc, p_train, x_test_enc, p_test: acc_train = {acc_train2}, acc_val= {acc_val2}')
 
     def summary(self):
