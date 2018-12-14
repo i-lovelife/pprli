@@ -22,3 +22,10 @@ class Registerable:
         cls_registed = Registerable._registry[cls]
         for key, value in cls_registed.items():
             print(f'{key}:{value.__name__}')
+
+    @classmethod
+    def from_hp(cls, hp)
+        if "type" not in hp:
+            raise ValueError(f'type not in hp:{hp}')
+        type = hp.pop("type")
+        return cls.by_name(type)(**hp)

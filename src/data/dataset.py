@@ -3,7 +3,23 @@ import click
 import numpy as np
 from keras.utils import to_categorical
 from src.data.util import shuffle_data
+from src.util.registerable import Registerable
 from src import DATA_ROOT
+class Dataset(Registerable):
+    def __init__(self):
+        pass
+    def gen_batch(self, batch_size):
+        pass
+
+@Dataset.register('ferg_double')
+class FergDouble(Dataset):
+    def __init__(self, data):
+        self.data = data
+    @classmethod
+    def from_hdf5(cls, path):
+        with h5py.File(processed_data_path, 'r') as f:
+            x, y, p = f['x'][:], f['y'][:], f['z'][:]
+    def gen_batch(self, batch_size):
 class DatasetLoader:
     def __init__(self, processed_data_path, num_y, num_p):
         with h5py.File(processed_data_path, 'r') as f:
