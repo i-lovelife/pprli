@@ -2,6 +2,9 @@ from collections import defaultdict
 class Registerable:
     _registry = defaultdict(dict)
     
+    def __init__(self, **args):
+        if args != {}:
+            raise ValueError(f'{args} is not None for init {type(self).__name__}')
     @classmethod
     def register(cls, name):
         cls_registed = Registerable._registry[cls]

@@ -27,8 +27,8 @@ import os
 from src.util.callbacks import Evaluate
 from src.models.task import FergTask
 from src.data.dataset import Dataset
-from src.evaluation import Evaluator
-from src.models.privater import Privater
+from src.evaluater import Evaluator
+from src.privater.privater import Privater
 from src.layers import ModelBuilder
 import click
 @Privater.register('adae')
