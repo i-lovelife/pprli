@@ -26,40 +26,12 @@ import imageio
 import os
 from src.util.callbacks import Evaluate
 from src.models.task import FergTask
-from src.data.dataset import Dataset
-from src.evaluater import Evaluator
 from src.privater.privater import Privater
 from src.layers import ModelBuilder
 import click
 @Privater.register('adae')
 class Adae(Privater):
-    def __init__(self,
-                 img_dim=64,
-                 z_dim=128,
-                 kl_weight=-1.,
-                 rec_weight=-1.,
-                 encoder_share=False,
-                 cls_y_weight=-1.,
-                 cnn_hp={},
-                 eva_hp={}):
-        self.dataset = Dataset.by_name(dataset)
-        self.eva_hp = eva_hp
-        def build_encoder(cnn_hp)
-            cnn_model = build_cnn(**cnn_hp)
-            x_in = Input(shape=(img_dim, img_dim, 3))
-            x = cnn_model(x_in)
-            if kl_weight > -0.5:
-                z_mean, z_log_var = Dense(2*z_dim)(x)
-                def sampling(args):
-                    z_mean, z_log_var = args
-                    u = K.random_normal(shape=K.shape(z_mean))
-                    return z_mean + K.exp(z_log_var / 2) * u
-                z_sample = Lambda(sampling)([z_mean, z_log_var])
-                model = Model(x_in,[z_sample, z_mean, z_log_var])
-            else:
-                z = Dense(z_dim)(x)
-                model = Model(x_in, z)
-            return model
+    def __init__(**args):
         def build_dis(cnn_hp):
             cnn_model = build_cnn(**cnn_hp)
             x_in = Input(shape=(z_dim,))
@@ -165,9 +137,6 @@ class Adae(Privater):
                 p_acc, u_acc = self.evaluate()
                 self.save_weights_iter(model_dir, i, p_acc, u_acc)
 
-    def get_name(self):
-        return type(self).__name__
-
     def save_weights(self, path):
         self.g_train_model.save_weights(path)
 
@@ -178,23 +147,6 @@ class Adae(Privater):
 
     def load_weights(self, model_path):
         self.g_train_model.load_weights(model_path)
-
-    def evaluate(self):
-        eva_hp = self.eva_hp
-        x_train, y_train, p_train = self.train_data
-        x_test, y_test, p_test = self.test_data
-
-        num_p = self.num_p
-        p_fake = np.random.choice(num_p, x_test.shape[0])
-        p_fake = to_categorical(p_fake)
-        x_test = self.predict(x_test, p=p_fake)
-        p_test = p_fake
-        resnet = resnet_v1(self.input_shape, self.num_p)
-        history = resnet.fit(x_train, p_train, validation_data=(x_test, p_test), \
-                             batch_size=batch_size, epochs=num_epochs)
-
-        acc = np.max(history.history['val_acc'])
-        print(acc)
 
 
 def prepareLogger(out_file=None):

@@ -13,6 +13,7 @@ class Registerable:
                 raise ValueError(f'{name}already registed in {cls.__name__}, \
                         old:{cls_registed[name].__name__} new:{subclass.__name__}')
             cls_registed[name] = subclass
+            return subclass
         return add_to_registry
     @classmethod
     def by_name(cls, name):
@@ -27,7 +28,7 @@ class Registerable:
             print(f'{key}:{value.__name__}')
 
     @classmethod
-    def from_hp(cls, hp)
+    def from_hp(cls, hp):
         if "type" not in hp:
             raise ValueError(f'type not in hp:{hp}')
         type = hp.pop("type")

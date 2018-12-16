@@ -31,8 +31,8 @@ class PrivaterTrainer(Trainer):
             get_test(): get all test data
 
         privater:
-            train_d(dataset, batch_size): train d_train_model of privater for a single iter
-            train_g(dataset, batch_size): train g_train_model of privater for a single iter
+            train_d(data): train privater d on data for one iter
+            train_g(data): train privater g on data for one iter
             predict(data): output encrypted version of data
         
         evaluater:
@@ -42,9 +42,11 @@ class PrivaterTrainer(Trainer):
             return
         for it in range(self.total_iter):
             for j in range(self.d_iter):
-                output_d = privater.train_d(dataset, batch_data)
+                data = dataset.get_train_batch(batch_size)
+                output_d = privater.train_d(data)
             for j in range(self.g_iter):
-                output_g = privater.train_g(dataset, batch_data)
+                data = dataset.get_train_batch(batch_size)
+                output_g = privater.train_g(data)
             if it % self.log_iter == 0:
                 print(f'iter {it}: g_log={output_g} d_log={output_d}')
             if it % self.evaluate_iter == 0 and evaluater is not None:
