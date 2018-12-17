@@ -2,6 +2,7 @@
 ./data/**
 experiments/
 pprli_env/
+notebooks/
 hpc_scripts/*.pbs.*
 .*.swp
 # Byte-compiled / optimized / DLL files
