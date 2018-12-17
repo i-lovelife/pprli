@@ -1,39 +1,17 @@
-from src.util.registerable import Registerable
-from keras import Model
+from keras.layers import Dense, Layer
 
-class ModelBuilder(Registerable):
-    def __init__(self):
-        super(ModelBuilder, self).__init__()
-        self.layers = []
-
-    def add_layer(self, layer):
-        self.layers.append(layer)
-
-    def __call__(self, inputs):
-        for layer in self.layers:
-            inputs = layers(inputs)
-        return inputs
-
-@LayerBuilder.register('cnn')
-class CnnBuilder(ModelBuilder):
-    def __init__(num_layers=3,
-                 max_num_channels=64*3,
-                 f_size=4):
-        """
-        Input: (img_dim, img_dim, 3)
-        """
-        super(CnnBuilder, self).__init__()
-
-        for i in range(num_layers + 1):
-            num_channels = max_num_channels // 2**(num_layers - i)
-            conv2d = Conv2D(num_channels,
-                       (5, 5),
-                       strides=(2, 2),
-                       use_bias=False,
-                       padding='same')
-            self.layers.push(conv2d)
-            if i > 0:
-                self.layers.push(BatchNormalization())
-            self.add_layer(LeakyReLU(0.2))
-        self.add_layer(Flatten())
-
+class VIB(Layer):
+    """变分信息瓶颈层
+    """
+    def __init__(self, lamb, **kwargs):
+        self.lamb = lamb
+        super(VIB, self).__init__(**kwargs)
+    def call(self, inputs):
+        z_mean, z_log_var = inputs
+        u = K.random_normal(shape=K.shape(z_mean))
+        kl_loss = - 0.5 * K.sum(K.mean(1 + z_log_var - K.square(z_mean) - K.exp(z_log_var), 0))
+        self.add_loss(self.lamb * kl_loss)
+        u = K.in_train_phase(u, 0.)
+        return z_mean + K.exp(z_log_var / 2) * u
+    def compute_output_shape(self, input_shape):
+        return input_shape[0]

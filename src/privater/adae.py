@@ -27,24 +27,95 @@ import os
 from src.util.callbacks import Evaluate
 from src.models.task import FergTask
 from src.privater.privater import Privater
-from src.layers import ModelBuilder
+from src.layers import VIB
 import click
 @Privater.register('adae')
 class Adae(Privater):
-    def __init__(**args):
-        def build_dis(cnn_hp):
-            cnn_model = build_cnn(**cnn_hp)
-            x_in = Input(shape=(z_dim,))
+    def __init__(self,
+                 img_dim=64,
+                 z_dim=128,
+                 share_enc=False,
+                 rec_weight=-1,
+                 mi_weight=-1,
+                 kl_weight=-1,
+                 **args):
+        num_layers = int(np.log2(img_dim)) - 3
+        max_num_channels = img_dim * 4
+        f_size = img_dim // 2**(num_layers + 1)
+        def build_cnn():
+            x_in = Input(shape=(img_dim, img_dim, 3))
+            x = x_in
+            for i in range(num_layers + 1):
+                num_channels = max_num_channels // 2**(num_layers - i)
+                x = Conv2D(num_channels,
+                           (5, 5),
+                           strides=(2, 2),
+                           use_bias=False,
+                           padding='same')(x)
+                if i > 0:
+                    x = BatchNormalization()(x)
+            x = LeakyReLU(0.2)(x)
+
+            x = Flatten()(x)
+            return Model(x_in, x)
+
+        def build_encoder():
+            cnn_model = build_cnn()
+            x_in = Input(shape=(img_dim, img_dim, 3))
             x = cnn_model(x_in)
+            if kl_weight > 0:
+                z_mean = Dense(z_dim)(x)
+                z_log_var = Dense(z_dim)(x)
+                z = VIB(kl_weight)([z_mean, z_log_var])
+            else:
+                z = Dense(z_dim)(x)
+            model = Model(x_in, z)
+            return model
+
+        def build_mi():
+            z_in = Input(shape=(2*z_dim))
+            z = z_in
+            z = Dense(z_dim, activation='relu')(z)
+            z = Dense(z_dim, activation='relu')(z)
+            z = Dense(1)(z)
+            return Model(z_in, z)
+
+        def build_dis():
+            x_in = Input(shape=(z_dim,))
+            x = x_in
             score = Dense(1, use_bias=False)(x)
             model = Model(x_in, score)
             return model
-        def kl_loss(z_mean, z_log_var):
-            return - 0.5 * K.mean(1 + z_log_var - K.square(z_mean) - K.exp(z_log_var))
+
+        def build_decoder():
+            z_in = Input(shape=(z_dim, ))
+            z = z_in
+
+            z = Dense(f_size**2 * max_num_channels)(z)
+            z = BatchNormalization()(z)
+            z = Activation('relu')(z)
+            z = Reshape((f_size, f_size, max_num_channels))(z)
+
+            for i in range(num_layers):
+                num_channels = max_num_channels // 2**(i + 1)
+                z = Conv2DTranspose(num_channels,
+                                    (5, 5),
+                                    strides=(2, 2),
+                                    padding='same')(z)
+                z = BatchNormalization()(z)
+                z = Activation('relu')(z)
+
+            z = Conv2DTranspose(3,
+                                (5, 5),
+                                strides=(2, 2),
+                                padding='same')(z)
+            z = Activation('tanh')(z)
+            return Model(z_in, z)
+
             
-        e1 = build_encoder(cnn_hp)
-        e2 = e1 if encoder_share else build_encoder(cnn_hp)
-        d = build_dis(cnn_hp)
+        e1 = build_encoder()
+        e2 = e1 if share_enc else build_encoder()
+        d = build_dis()
         
         # build d_train_model
         e1.trainable = False
