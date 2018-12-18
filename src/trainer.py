@@ -2,17 +2,18 @@ from src.util.registerable import Registerable
 class Trainer(Registerable):
     pass
 
-@Trainer.register('privater')
-class PrivaterTrainer(Trainer):
+#@Trainer.register('privater')
+#class PrivaterTrainer(Trainer):
+class PrivaterTrainer:
     def __init__(self,
                  batch_size=64,
                  total_iter=5000,
                  log_iter=10,
                  evaluate_iter=500,
                  d_iter=2,
-                 g_iter=1
+                 g_iter=1,
                  **args):
-        Super(PrivaterTrainer, self).__init__(**args)
+        #super(PrivaterTrainer, self).__init__(**args)
         self.batch_size = batch_size
         self.total_iter = total_iter
         self.log_iter = log_iter
@@ -42,10 +43,10 @@ class PrivaterTrainer(Trainer):
             return
         for it in range(self.total_iter):
             for j in range(self.d_iter):
-                data = dataset.get_train_batch(batch_size)
+                data = dataset.get_train_batch(self.batch_size)
                 output_d = privater.train_d(data)
             for j in range(self.g_iter):
-                data = dataset.get_train_batch(batch_size)
+                data = dataset.get_train_batch(self.batch_size)
                 output_g = privater.train_g(data)
             if it % self.log_iter == 0:
                 print(f'iter {it}: g_log={output_g} d_log={output_d}')
@@ -53,13 +54,14 @@ class PrivaterTrainer(Trainer):
                 output_evaluater = evaluater.evaluate(dataset, privater)
                 print(f'iter {it}: eva_log={output_evaluater}')
 
-@Trainer.register('common')
-def CommonTrainer(Trainer):
+#@Trainer.register('common')
+#class CommonTrainer(Trainer):
+class CommonTrainer:
     def __init__(self,
                  batch_size=128,
                  epochs=5,
                  **args):
-        Super(CommonTrainer, self).__init__(**args)
+        #super(CommonTrainer, self).__init__(**args)
         self.batch_size = batch_size
         self.epochs = epochs
 

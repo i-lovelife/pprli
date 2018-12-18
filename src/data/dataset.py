@@ -9,7 +9,7 @@ from src import DATA_ROOT
 def get_length(data):
     return next(iter(data.items()))[1].shape[0]
 class Dataset(Registerable):
-    def __init__(self, data, split=0.85, max_ele=1e9, **args):
+    def __init__(self, data, split=0.85, max_ele=1e9, transform=False, **args):
         """
         data:
             {
@@ -17,14 +17,20 @@ class Dataset(Registerable):
                 'y':[]
             }
         """
-        super(Dataset, self).__init__(**args)
         self.data = data
         length = min(max_ele, get_length(data))
         num_train = int(length * split)
         all_idx = np.random.permutation(length)
         self.train_data = {key: value[all_idx[:num_train]] for key, value in data.items()}
         self.test_data = {key: value[all_idx[num_train:length]] for key, value in data.items()}
+        
+        self.transformed = False
+        if transform:
+            self.transform()
 
+    def transform(self):
+        self.transformed = True
+        
     def get_data(self, data, num=-1):
         length = get_length(data)
         if num<0:
@@ -56,7 +62,7 @@ class Dataset(Registerable):
         return self.get_data(self.test_data, num=batch_size)
 
 
-@Dataset.register('ferg')
+#@Dataset.register('ferg')
 class Ferg(Dataset):
     @classmethod
     def from_hdf5(cls,
@@ -77,8 +83,21 @@ class Ferg(Dataset):
             'p': p
         }
         return cls(data, **args)
+    
+    def transform(self):
+        if self.transformed is True:
+            return
+        def process(data):
+            x, y, p = data['x'], data['y'], data['p']
+            x = x.astype('float32') / 255 - 0.5
+            y = to_categorical(y, num_classes=7)
+            p = to_categorical(p, num_classes=6)
+            return {'x':x, 'y':y, 'p':p}
+        self.train_data = process(self.train_data)
+        self.test_data = process(self.test_data)
+        self.transformed = True
 
-@Dataset.register('ferg_zero_one')
+#@Dataset.register('ferg_zero_one')
 class FergZeroOne(Dataset):
     @classmethod
     def from_hdf5(cls,
