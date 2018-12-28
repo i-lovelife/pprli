@@ -2,9 +2,6 @@ from collections import defaultdict
 class Registerable:
     _registry = defaultdict(dict)
     
-    def __init__(self, **args):
-        if args != {}:
-            raise ValueError(f'{args} is not None for init {type(self).__name__}')
     @classmethod
     def register(cls, name):
         cls_registed = Registerable._registry[cls]
@@ -29,7 +26,5 @@ class Registerable:
 
     @classmethod
     def from_hp(cls, hp):
-        if "type" not in hp:
-            raise ValueError(f'type not in hp:{hp}')
-        type = hp.pop("type")
+        type = hp.pop("type", cls._default_type)
         return cls.by_name(type)(**hp)

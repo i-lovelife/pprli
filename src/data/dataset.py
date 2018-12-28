@@ -9,7 +9,8 @@ from src import DATA_ROOT
 def get_length(data):
     return next(iter(data.items()))[1].shape[0]
 class Dataset(Registerable):
-    def __init__(self, data, split=0.85, max_ele=1e9, transform=False, **args):
+    _default_type = 'ferg'
+    def __init__(self, data=None, split=0.85, max_ele=1e9, transform=False, train_data=None, test_data=None):
         """
         data:
             {
@@ -17,13 +18,16 @@ class Dataset(Registerable):
                 'y':[]
             }
         """
-        self.data = data
-        length = min(max_ele, get_length(data))
-        num_train = int(length * split)
-        all_idx = np.random.permutation(length)
-        self.train_data = {key: value[all_idx[:num_train]] for key, value in data.items()}
-        self.test_data = {key: value[all_idx[num_train:length]] for key, value in data.items()}
-        
+        if data is not None:
+            self.data = data
+            length = min(max_ele, get_length(data))
+            num_train = int(length * split)
+            all_idx = np.random.permutation(length)
+            self.train_data = {key: value[all_idx[:num_train]] for key, value in data.items()}
+            self.test_data = {key: value[all_idx[num_train:length]] for key, value in data.items()}
+        else:
+            self.train_data = train_data
+            self.test_data = test_data
         self.transformed = False
         if transform:
             self.transform()
@@ -60,14 +64,23 @@ class Dataset(Registerable):
         return self.get_data(self.train_data, num=batch_size)
     def get_test_batch(self, batch_size):
         return self.get_data(self.test_data, num=batch_size)
+    
+    @classmethod
+    def from_hp(cls, hp):
+        type = hp.pop("type", cls._default_type)
+        from_hdf5 = hp.pop("from_hdf5", True)
+        if from_hdf5:
+            return cls.by_name(type).from_hdf5(**hp)
+        return cls.by_name(type)(**hp)
 
 
-#@Dataset.register('ferg')
+@Dataset.register('ferg')
 class Ferg(Dataset):
     @classmethod
     def from_hdf5(cls,
                   path=DATA_ROOT / "processed/ferg.hdf5", 
-                  select_people=[0, 1],
+                  select_people=[0, 1, 2, 3, 4, 5],
+                  transform=True,
                   **args):
         with h5py.File(path, 'r') as f:
             x, y, p = f['x'][:], f['y'][:], f['z'][:]
@@ -82,7 +95,7 @@ class Ferg(Dataset):
             'y': y,
             'p': p
         }
-        return cls(data, **args)
+        return cls(data=data, transform=transform, **args)
     
     def transform(self):
         if self.transformed is True:
@@ -97,7 +110,7 @@ class Ferg(Dataset):
         self.test_data = process(self.test_data)
         self.transformed = True
 
-#@Dataset.register('ferg_zero_one')
+@Dataset.register('ferg_zero_one')
 class FergZeroOne(Dataset):
     @classmethod
     def from_hdf5(cls,
@@ -126,6 +139,9 @@ def test_ferg():
     ferg_full = Dataset.by_name('ferg').from_hdf5(select_people=[0, 1, 2, 3, 4, 5])
     train_data = ferg_full.train_data
     ferg_full.show_info()
+          
+    ferg_full = Dataset.by_name('ferg').from_hdf5(transform=False, select_people=[0, 1, 2, 3, 4, 5])
+    train_data = ferg_full.train_data
     print(f'max_p = {np.max(train_data["p"])}, min_p={np.min(train_data["p"])}')
 
 def test_ferg_zero_one():
@@ -133,6 +149,6 @@ def test_ferg_zero_one():
     ferg_zero_one.show_info()
 
 if __name__ == "__main__":
-    #test_ferg()
+    test_ferg()
     test_ferg_zero_one()
 
