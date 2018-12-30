@@ -1,0 +1,26 @@
+{
+    "privater":{
+        "type":"gpf",
+        "z_dim":64,
+        "fake_rec_z_weight":100,
+        "real_rec_x_weight":1
+    },
+    "dataset":{
+        "type":"ferg"
+    },
+    "trainer":{
+        "type":"adv",
+        "epochs":100
+    },
+    "evaluaters":[
+        {"type":"utility",
+         "z_dim":64
+        },
+        {"type":"private",
+         "z_dim":64
+        },
+        {"type":"reconstruction",
+         "base_dir":
+        }
+    ]
+}

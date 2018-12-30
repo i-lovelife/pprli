@@ -1,23 +1,17 @@
 #!/bin/bash
-#usage: submit.sh $EXPERIMENT_NAME $YOUR_COMMAND
+#usage: submit.sh $EXPERIMENT_NAME
 ROOT_DIR="/project/RDS-FEI-NLH-RW/work/pprli/"
-NAME=$1-$(date '+%Y-%m-%d-%H-%M-%S')
-EXPERIMENT_DIR=$ROOT_DIR/experiments/$NAME
-PBS_PATH=$ROOT_DIR/hpc_scripts/$NAME.pbs
-COMMAND=${@:2}
+NAME=$1
+COMMAND="python src/train.py --name $NAME"
+EXPERIMENT_DIR="$ROOT_DIR/$NAME"
+PBS_PATH="$EXPERIMENT_DIR/$NAME.pbs"
 echo "$COMMAND"
-$COMMAND --debug
-if [ "$?" -gt 0 ]; then
-    echo "Fail because command don't pass debug test"
-    exit 1
-fi
-echo "passed test. submit job now"
+echo "$EXPERIMENT_DIR"
+git add --all
+git commit -m "Experiment $COMMAND"
 mkdir -p $EXPERIMENT_DIR
 cp scripts/template.pbs $PBS_PATH
-echo "$COMMAND --name $NAME" >> $PBS_PATH
-git add --all
-git commit -m "Experiment $NAME $COMMAND"
-git push
+echo $COMMAND >> $PBS_PATH
 echo "#$(git rev-parse HEAD)" >> $PBS_PATH
 cd $EXPERIMENT_DIR
 jobid=$(qsub $PBS_PATH)

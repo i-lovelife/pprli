@@ -31,7 +31,7 @@ from src.callbacks import EvaluaterCallback
 def main(name, show, debug, gpu):
     os.environ["CUDA_VISIBLE_DEVICES"] = gpu
     if name is not None:
-        config_path = CONFIG_ROOT / (name+'.config')
+        config_path = CONFIG_ROOT / (name+'.json')
         with config_path.open() as f:
             config = json.load(f)
         experiment_path = EXPERIMENT_ROOT / name
@@ -40,7 +40,7 @@ def main(name, show, debug, gpu):
         experiment_path.mkdir()
         
         log_path = experiment_path / 'stdout.log'
-        copyfile(config_path, experiment_path/ (name+'.config'))
+        copyfile(config_path, experiment_path/ (name+'.json'))
         
         sys.stdout = TeeLogger(log_path, sys.stdout)
         sys.stderr = TeeLogger(log_path, sys.stderr)
