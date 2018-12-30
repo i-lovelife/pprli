@@ -326,13 +326,13 @@ class Gpf(Privater):
         self.d_train_model = d_train_model
         self.train_model = g_train_model
     
-    def gen_random_p(self, shape):
-        p = np.random.randint(shape[1], size=shape[0])
-        return to_categorical(p, num_classes=shape[1])
+    def gen_random_p(self, real_p):
+        p = np.random.randint(real_p.shape[1], size=real_p.shape[0])
+        return to_categorical(p, num_classes=real_p.shape[1])
     def get_input_d(self, data1, data2):
         x1, y1, p1 = data1['x'], data1['y'], data1['p']
         x2, y2, p2 = data2['x'], data2['y'], data2['p']
-        fake_p = self.gen_random_p(p1.shape)
+        fake_p = self.gen_random_p(p1)
         return ([x1, x2, fake_p], {'fake_classify':fake_p,
                                    'rnd_classify':p2,
                                    'd_judge_loss':x1
@@ -340,7 +340,7 @@ class Gpf(Privater):
     def get_input_g(self, data1, data2):
         x1, y1, p1 = data1['x'], data1['y'], data1['p']
         x2, y2, p2 = data2['x'], data2['y'], data2['p']
-        fake_p = self.gen_random_p(p1.shape)
+        fake_p = self.gen_random_p(p1)
         return ([x1, x2, p1, fake_p], {'real_rec_x': x1,
                                        'fake_rec_z': x1,
                                        'fake_classify': fake_p,
@@ -352,14 +352,28 @@ class Gpf(Privater):
         x, y, p = data['x'], data['y'], data['p']
         x = self.encoder.predict(x)
         return {'x': x, 'y': y, 'p': p}
+    
+    def shift(self, p, shift_step=1):
+        ret = np.argmax(p, axis=-1).astype(np.int32)
+        ret = (ret+shift_step)%(p.shape[1])
+        ret = to_categorical(ret, num_classes=p.shape[1])
+        #import pdb;pdb.set_trace()
+        return ret
     def reconstruct(self, data):
         x, y, p = data['x'], data['y'], data['p']
         x = self.encoder.predict(x)
-        fake_p = np.argmax(p, axis=-1)
-        fake_p = (fake_p+1) % (p.shape[1])
-        fake_p = to_categorical(fake_p, num_classes=p.shape[1])
+        fake_p = self.shift(p)
+        #if x.ndim != p.ndim:
+        #    import pdb;pdb.set_trace()
         x = self.decoder.predict(np.concatenate([x, fake_p], axis=-1))
         return {'x': x, 'y': y, 'p': p}
+    
+    
+@Privater.register('gpf_zero_one')
+class GpfZeroOne(Gpf):
+    def gen_random_p(self, p):
+        return self.shift(p)
+    
     
 @Privater.register('adae')
 class Adae(Privater):
