@@ -143,29 +143,34 @@ class Ferg(Dataset):
         return {'x':x_all[idx], 'y':y_all[idx], 'p':p_all[idx]}
 
 @Dataset.register('ferg_zero_one')
-class FergZeroOne(Dataset):
+class FergZeroOne(Ferg):
     @classmethod
     def from_hdf5(cls,
                   path=DATA_ROOT / "processed/ferg.hdf5", 
-                  select_people=[0, 1],
+                  select_people=[0, 1, 2, 3, 4, 5],
+                  transform=True,
                   **args):
-        if len(set(select_people))!=2:
-            raise ValueError(f'len of {select_people} is not 2')
         with h5py.File(path, 'r') as f:
             x, y, p = f['x'][:], f['y'][:], f['z'][:]
-        x0_idx = np.array([idx for idx in range(len(x)) if p[idx] == select_people[0]])
-        x1_idx = np.array([idx for idx in range(len(x)) if p[idx] == select_people[1]])
-        x0 = x[x0_idx]
-        x1 = x[x1_idx]
-        y0 = y[x0_idx]
-        y1 = y[x1_idx]
+        idx = np.array([idx for idx in range(len(x)) if p[idx] in select_people])
+        remap_person = {x:i for i, x in enumerate(select_people)}
+        x = x[idx]
+        y = y[idx]
+        p = p[idx]
+        p = np.array([remap_person[person] for person in p])
+        p = (p>0).astype(np.int32)
         data ={
-            'x0': x0,
-            'x1': x1,
-            'y0': y0,
-            'y1': y1
+            'x': x,
+            'y': y,
+            'p': p
         }
-        return cls(data, **args)
+        return cls(data=data, transform=transform, **args)
+    def process(self, data):
+            x, y, p = data['x'], data['y'], data['p']
+            x = x.astype('float32') / 255 - 0.5
+            y = to_categorical(y, num_classes=7)
+            p = to_categorical(p, num_classes=2)
+            return {'x':x, 'y':y, 'p':p}
  
 def test_ferg():
     ferg_full = Dataset.by_name('ferg').from_hdf5(select_people=[0, 1, 2, 3, 4, 5])

@@ -142,8 +142,8 @@ class DownTaskEvaluater(Evaluater):
     
 @Evaluater.register('private')
 class PrivateTaskEvaluater(DownTaskEvaluater):
-    def __init__(self, z_dim=128, **args):
-        super().__init__(z_dim=z_dim, num_classes=6, **args)
+    def __init__(self, z_dim=128, num_classes=6, **args):
+        super().__init__(z_dim=z_dim, num_classes=num_classes, **args)
         
     def get_input(self, data):
         return (data['x'], data['p'])
