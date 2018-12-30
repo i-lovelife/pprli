@@ -11,7 +11,7 @@ from keras.callbacks import ModelCheckpoint
 
 import os
 import sys
-from shutil import rmtree
+from shutil import rmtree, copyfile
 import ujson as json
 import click
 
@@ -20,7 +20,8 @@ from src.trainer import Trainer
 from src.evaluater import Evaluater
 from src.privater import Privater
 from src import CONFIG_ROOT, EXPERIMENT_ROOT
-from src.util.logging import TeeLogger
+from src.util.tee_logging import TeeLogger
+from src.callbacks import EvaluaterCallback
 
 @click.command()
 @click.option('--name', default=None)
@@ -39,13 +40,19 @@ def main(name, show, debug, gpu):
         experiment_path.mkdir()
         
         log_path = experiment_path / 'stdout.log'
+        copyfile(config_path, experiment_path/ (name+'.config'))
         
         sys.stdout = TeeLogger(log_path, sys.stdout)
         sys.stderr = TeeLogger(log_path, sys.stderr)
     else:
+        name = 'tmp'
         config = {}
     
-    privater_config = config.pop('privater', {'type': 'vae'})
+    privater_config = config.pop('privater', 
+                                 {'type': 'gpf',
+                                  'z_dim': 64,
+                                  'fake_rec_z_weight':100
+                                 })
     privater = Privater.from_hp(privater_config)
     privater.summary()
     if show:
@@ -57,12 +64,16 @@ def main(name, show, debug, gpu):
     dataset = Dataset.from_hp(dataset_config)
     dataset.show_info()
     
-    trainer_config = config.pop('trainer', {'type': 'keras'})
+    trainer_config = config.pop('trainer', {'type': 'adv', 'epochs':50})
     trainer = Trainer.from_hp(trainer_config)
-    evaluaters_config = config.pop('evaluaters', [{'type': 'utility'}, {'type': 'private'}])
-    evaluaters = [Evaluater.from_hp(evaluater_config) for evaluater_config in evaluaters_config]
-    historys = trainer.train(dataset, worker=privater, evaluaters=evaluaters)
-    for history in historys:
-        print(history)
+    evaluaters_config = config.pop('evaluaters', [{'type': 'utility', 'z_dim':64}, 
+                                                  {'type': 'private', 'z_dim':64},
+                                                  {'type': 'reconstruction', 'base_dir':EXPERIMENT_ROOT / name}
+                                                 ])
+    callbacks = [EvaluaterCallback(Evaluater.from_hp(evaluater_config), dataset, privater) for evaluater_config in evaluaters_config]
+    historys = trainer.train(dataset, worker=privater, callbacks=callbacks)
+    for i in range(trainer.epochs):
+        output = ' '.join([f'{key}: {value}' for key, value in history.items()])
+        print(f'epochs:{i} {output}')
 if __name__ == '__main__':
     main()

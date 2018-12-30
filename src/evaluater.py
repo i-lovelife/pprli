@@ -37,6 +37,70 @@ class Evaluater(Worker):
     def load_weights(self, path):
         self.train_model.save_weights(path)
 
+@Evaluater.register('reconstruction')
+class ImgReconstructionEvaluater(Evaluater):
+    def __init__(self,
+                 base_dir=None,
+                 img_dim=64,
+                 selected_y=[0, 1, 2, 3, 4, 5, 6],
+                 selected_p=[0, 1, 2, 3, 4, 5]):
+        if base_dir is not None:
+            base_dir = base_dir/type(self).__name__
+            base_dir.mkdir(exist_ok=True)
+          
+        self.selected_y = selected_y
+        self.selected_p = selected_p
+        self.base_dir = base_dir
+        self.img_dim = img_dim
+    
+    def build_model(self, data):
+        pass
+    def get_input(self, data):
+        pass
+    def summary(self):
+        pass
+    def evaluate(self,
+                 dataset,
+                 privater,
+                 epoch):
+        if self.base_dir is None:
+            return
+        img_dim = self.img_dim
+        selected_p = self.selected_p
+        selected_y = self.selected_y
+        img_path=f'{str(self.base_dir/str(epoch))}.png'
+        figure = np.zeros((img_dim * len(selected_p), img_dim * len(selected_y), 3))
+        for i, p in enumerate(selected_p):
+            for j, y in enumerate(selected_y):
+                data = dataset.sample(selected_y=[y], selected_p=[p], num=1)
+                rec_data = privater.reconstruct(data)
+                rec_data = dataset.de_process(rec_data)
+                figure[i * img_dim:(i + 1) * img_dim,
+                       j * img_dim:(j + 1) * img_dim] = rec_data['x']
+        imageio.imwrite(img_path, figure)
+        
+@Evaluater.register('latent_visual')
+class LatentVisualizationEvaluater(ImgReconstructionEvaluater):
+    def evaluate(self,
+                 dataset,
+                 privater,
+                 epoch):
+        if self.base_dir is None:
+            return
+        img_dim = self.img_dim
+        selected_p = self.selected_p
+        selected_y = self.selected_y
+        img_path=f'{str(self.base_dir/str(epoch))}.png'
+        figure = np.zeros((img_dim * len(selected_p), img_dim * len(selected_y), 3))
+        for i, p in enumerate(selected_p):
+            for j, y in enumerate(selected_y):
+                data = dataset.sample(selected_y=[y], selected_p=[p], num=1)
+                rec_data = privater.reconstruct(data)
+                rec_data = dataset.de_process(rec_data)
+                figure[i * img_dim:(i + 1) * img_dim,
+                       j * img_dim:(j + 1) * img_dim] = rec_data['x']
+        imageio.imwrite(img_path, figure)
+
 class DownTaskEvaluater(Evaluater):
     def __init__(self,
                  num_classes=7,
@@ -60,7 +124,9 @@ class DownTaskEvaluater(Evaluater):
         return model
     def evaluate(self,
                  dataset,
-                 privater):
+                 privater,
+                 epoch):
+        print(f'evaluating {type(self).__name__} on epoch {epoch}')
         self.train_model = self.build_model()
         train_data = dataset.get_train()
         test_data = dataset.get_test()

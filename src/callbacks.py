@@ -1,23 +1,29 @@
 from keras.callbacks import Callback as KerasCallback
 
 class Callback(KerasCallback):
-    pass
+    def get_output_history(self):
+        pass
     
 class EvaluaterCallback(Callback):
-    def __init__(self, evaluaters, dataset, worker):
-        self.evaluaters = evaluaters
+    def __init__(self, evaluater, dataset, worker):
+        self.evaluater = evaluater
         self.dataset = dataset
         self.worker = worker
-        self.evaluate_history = []
+        self.output_history = []
     def on_train_begin(self, logs=None):
-        self.evaluate_history = []
+        self.output_history = []
     def on_epoch_end(self, epoch, logs=None):
-        evaluaters = self.evaluaters
+        evaluater = self.evaluater
         dataset = self.dataset
         worker = self.worker
-        output_evaluater = [evaluater.evaluate(dataset, worker) for evaluater in evaluaters]
-        self.evaluate_history.append(output_evaluater)
-        print(f'epoch {epoch}: eva={output_evaluater}')
+        output = evaluater.evaluate(dataset, 
+                                    worker,
+                                    epoch)
+        if output is not None:
+            print(f'epoch {epoch}: output {type(self.evaluater).__name__} = {output}')
+            self.output_history.append(output)
+    def get_output_history(self):
+        return self.output_history
 
 class EarlyStopping(Callback):
     def __init__(self,

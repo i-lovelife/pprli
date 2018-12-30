@@ -64,6 +64,10 @@ class Dataset(Registerable):
         return self.get_data(self.train_data, num=batch_size)
     def get_test_batch(self, batch_size):
         return self.get_data(self.test_data, num=batch_size)
+    def get_train_len(self):
+        return get_length(self.train_data)
+    def get_test_len(self):
+        return get_length(self.test_data)
     
     @classmethod
     def from_hp(cls, hp):
@@ -97,18 +101,46 @@ class Ferg(Dataset):
         }
         return cls(data=data, transform=transform, **args)
     
-    def transform(self):
-        if self.transformed is True:
-            return
-        def process(data):
+    def process(self, data):
             x, y, p = data['x'], data['y'], data['p']
             x = x.astype('float32') / 255 - 0.5
             y = to_categorical(y, num_classes=7)
             p = to_categorical(p, num_classes=6)
             return {'x':x, 'y':y, 'p':p}
-        self.train_data = process(self.train_data)
-        self.test_data = process(self.test_data)
+    
+    def de_process(self, data):
+        x, y, p = data['x'], data['y'], data['p']
+        x = (x + 1) / 2 * 255
+        x = np.round(x, 0).astype(int)
+        y = np.argmax(y, axis=-1)
+        p = np.argmax(p, axis=-1)
+        return {'x':x, 'y':y, 'p':p}
+    
+    def transform(self):
+        if self.transformed is True:
+            return
+        self.train_data = self.process(self.train_data)
+        self.test_data = self.process(self.test_data)
         self.transformed = True
+        
+    def sample(self, num=64, selected_y=[], selected_p=[]):
+        # sample data from train
+        if selected_y == []:
+            selected_y = [0, 1, 2, 3, 4, 5, 6]
+        if selected_p == []:
+            selected_p = [0, 1, 2, 3, 4, 5]
+            
+        x_all, y_all, p_all = self.train_data['x'], self.train_data['y'], self.train_data['p']
+        idx = []
+        for i in range(len(x_all)):
+            y = y_all[i]
+            p = p_all[i]
+            if np.argmax(y, axis=-1) in selected_y and np.argmax(p, axis=-1) in selected_p:
+                idx.append(i)
+                if num > 0 and len(idx) >= num:
+                    break
+                    
+        return {'x':x_all[idx], 'y':y_all[idx], 'p':p_all[idx]}
 
 @Dataset.register('ferg_zero_one')
 class FergZeroOne(Dataset):
