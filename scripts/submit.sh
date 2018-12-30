@@ -3,7 +3,7 @@
 ROOT_DIR="/project/RDS-FEI-NLH-RW/work/pprli/"
 NAME=$1
 COMMAND="python src/train.py --name $NAME"
-EXPERIMENT_DIR="$ROOT_DIR/$NAME"
+EXPERIMENT_DIR="$ROOT_DIR/experiments/$NAME"
 PBS_PATH="$EXPERIMENT_DIR/$NAME.pbs"
 echo "$COMMAND"
 echo "$EXPERIMENT_DIR"
