@@ -51,7 +51,8 @@ def main(name, show, debug, gpu):
     privater_config = config.pop('privater', 
                                  {'type': 'gpf',
                                   'z_dim': 64,
-                                  'fake_rec_z_weight':100
+                                  'fake_rec_z_weight':100,
+                                  'real_rec_x_weight':0
                                  })
     privater = Privater.from_hp(privater_config)
     privater.summary()
@@ -68,7 +69,7 @@ def main(name, show, debug, gpu):
     trainer = Trainer.from_hp(trainer_config)
     evaluaters_config = config.pop('evaluaters', [{'type': 'utility', 'z_dim':64}, 
                                                   {'type': 'private', 'z_dim':64},
-                                                  {'type': 'reconstruction', 'base_dir':EXPERIMENT_ROOT / name}
+                                                  {'type': 'reconstruction', 'base_dir':name}
                                                  ])
     callbacks = [EvaluaterCallback(Evaluater.from_hp(evaluater_config), dataset, privater) for evaluater_config in evaluaters_config]
     historys = trainer.train(dataset, worker=privater, callbacks=callbacks)

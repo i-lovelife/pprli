@@ -10,6 +10,7 @@ from src.data.dataset import Dataset
 from src.trainer import KerasTrainer
 from src.util.worker import Worker
 from src.callbacks import EarlyStopping
+from src import EXPERIMENT_ROOT
 
 
 class Evaluater(Worker):
@@ -45,8 +46,8 @@ class ImgReconstructionEvaluater(Evaluater):
                  selected_y=[0, 1, 2, 3, 4, 5, 6],
                  selected_p=[0, 1, 2, 3, 4, 5]):
         if base_dir is not None:
-            base_dir = base_dir/type(self).__name__
-            base_dir.mkdir(exist_ok=True, parents=True)
+            base_dir = EXPERIMENT_ROOT / base_dir / type(self).__name__
+            base_dir.mkdir(exist_ok=True)
           
         self.selected_y = selected_y
         self.selected_p = selected_p
