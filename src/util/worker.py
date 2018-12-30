@@ -1,3 +1,3 @@
 from src.util.registerable import Registerable
-class Privater(Registerable):
+class Worker(Registerable):
     pass

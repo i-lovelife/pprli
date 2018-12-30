@@ -1,4 +1,5 @@
 """
+Modified from allennlp
 A logger that maintains logs of both stdout and stderr when models are run.
 """
 
@@ -30,8 +31,6 @@ class TeeLogger:
     def __init__(self, filename: str, terminal: TextIO, file_friendly_terminal_output: bool=True) -> None:
         self.terminal = terminal
         self.file_friendly_terminal_output = file_friendly_terminal_output
-        parent_directory = os.path.dirname(filename)
-        os.makedirs(parent_directory, exist_ok=True)
         self.log = open(filename, 'a')
 
     def write(self, message):

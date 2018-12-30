@@ -3,6 +3,8 @@
 experiments/
 pprli_env/
 hpc_scripts/*.pbs
+notebooks/*
+!notebooks/*.ipynb
 .*.swp
 # Byte-compiled / optimized / DLL files
 __pycache__/
