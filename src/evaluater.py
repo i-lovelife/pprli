@@ -46,7 +46,7 @@ class ImgReconstructionEvaluater(Evaluater):
                  selected_p=[0, 1, 2, 3, 4, 5]):
         if base_dir is not None:
             base_dir = base_dir/type(self).__name__
-            base_dir.mkdir(exist_ok=True)
+            base_dir.mkdir(exist_ok=True, parents=True)
           
         self.selected_y = selected_y
         self.selected_p = selected_p
