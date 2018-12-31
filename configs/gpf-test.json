@@ -20,7 +20,7 @@
          "z_dim":64
         },
         {"type":"reconstruction",
-         "base_dir": "vae-test"
+         "base_dir": "gpf-test"
         }
     ]
 }
