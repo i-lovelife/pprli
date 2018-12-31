@@ -219,6 +219,64 @@ class CVae(Privater):
         x = self.decoder.predict(np.concatenate([x, p], axis=-1))
         return {'x': x, 'y': y, 'p': p}
         
+
+@Privater.register('cvae-su')
+class CvaeSu(Privater):
+    def __init__(self,
+                 img_dim=64,
+                 z_dim=128,
+                 p_dim=6,
+                 rec_x_weight=64*64/10
+                 ):
+        encoder = build_encoder(img_dim=img_dim,
+                                z_dim=z_dim,
+                                use_max_pooling=True, 
+                                drop_out=-1,
+                                use_gauss_prior=True)
+        decoder = build_decoder(img_dim=img_dim,
+                                z_dim=z_dim)
+        p_in = Input(shape=(p_dim,))
+        expect_z_mean = Dense(z_dim)(p_in)
+        mean_tracker = Model(p_in, expect_z_mean)
+        
+        
+        x_in = Input(shape=(img_dim, img_dim, 3))
+        x = x_in
+        z_mean, z_log_var = encoder(x)
+        z = Lambda(gauss_sampling)([z_mean, z_log_var])
+        def condition_gauss_loss_func(args):
+            z_mean, z_log_var, expect_z_mean = args
+            return - 0.5 * K.mean(1 + z_log_var - K.square(z_mean - expect_z_mean) - K.exp(z_log_var))
+        gauss_loss = Lambda(condition_gauss_loss_func, name='prior')([z_mean, z_log_var, expect_z_mean])
+        rec_x = decoder(z)
+        rec_x = Lambda(lambda x: x, name="rec_x")(rec_x)
+        train_model = Model([x_in, p_in], [rec_x, gauss_loss])
+        
+        train_model.compile(optimizer=Adam(1e-3),
+                            loss={'prior': identity_loss, 'rec_x': 'mean_squared_error'},
+                            loss_weights={'prior':1, 'rec_x': rec_x_weight}
+                            )
+        self.mean_tracker = mean_tracker
+        self.encoder = encoder
+        self.decoder = decoder
+        self.train_model = train_model
+    
+    def get_input(self, data):
+        x, y, p = data['x'], data['y'], data['p']
+        return ([x, p], {'prior':x, 'rec_x':x})
+    def predict(self, data):
+        x, y, p = data['x'], data['y'], data['p']
+        x_mean = self.mean_tracker.predict(p)
+        x, _ = self.encoder.predict(x)
+        x -= x_mean
+        return {'x': x, 'y': y, 'p': p}
+    def reconstruct(self, data):
+        x, y, p = data['x'], data['y'], data['p']
+        x, _ = self.encoder.predict(x)
+        x = self.decoder.predict(x)
+        return {'x': x, 'y': y, 'p': p}
+    
+    
 @Privater.register('gpf')
 class Gpf(Privater):
     def __init__(self,
@@ -367,7 +425,6 @@ class Gpf(Privater):
         #    import pdb;pdb.set_trace()
         x = self.decoder.predict(np.concatenate([x, fake_p], axis=-1))
         return {'x': x, 'y': y, 'p': p}
-    
     
 @Privater.register('gpf_zero_one')
 class GpfZeroOne(Gpf):

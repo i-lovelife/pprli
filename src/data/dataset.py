@@ -102,11 +102,11 @@ class Ferg(Dataset):
         return cls(data=data, transform=transform, **args)
     
     def process(self, data):
-            x, y, p = data['x'], data['y'], data['p']
-            x = x.astype('float32') / 255 - 0.5
-            y = to_categorical(y, num_classes=7)
-            p = to_categorical(p, num_classes=6)
-            return {'x':x, 'y':y, 'p':p}
+        x, y, p = data['x'], data['y'], data['p']
+        x = x.astype('float32') / 255 - 0.5
+        y = to_categorical(y, num_classes=7)
+        p = to_categorical(p, num_classes=6)
+        return {'x':x, 'y':y, 'p':p}
     
     def de_process(self, data):
         x, y, p = data['x'], data['y'], data['p']

@@ -1,16 +1,14 @@
 {
     "privater":{
-        "type":"gpf",
+        "type":"cvae-su",
         "z_dim":64,
-        "p_dim":2,
-        "fake_rec_z_weight":100,
-        "real_rec_x_weight":1
+        "rec_x_weight":10
     },
     "dataset":{
         "type":"ferg"
     },
     "trainer":{
-        "type":"adv",
+        "type":"keras",
         "epochs":100
     },
     "evaluaters":[
@@ -21,7 +19,7 @@
          "z_dim":64
         },
         {"type":"reconstruction",
-         "base_dir": "vae-test"
+         "base_dir": "cvae-su"
         }
     ]
 }
