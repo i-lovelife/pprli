@@ -34,6 +34,7 @@ import importlib
 def main(name, show, debug, gpu, hpc):
     os.environ["CUDA_VISIBLE_DEVICES"] = gpu
     if name is not None:
+        import pdb;pdb.set_trace()
         if hpc:
             config_mod = importlib.import_module(f'experiments.{name}.{name}')
         else:
