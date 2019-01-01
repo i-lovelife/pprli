@@ -46,7 +46,7 @@ class Config:
         with path.open(mode='w') as f:
             json.dump(self.config, f)
 
-@click.Command
+@click.command()
 @click.option('--name', type=str)
 def main(name):
     config = Config.make_config(name)
