@@ -13,7 +13,7 @@ class Config:
             "privater":{
                 "type":"cvae",
                 "z_dim":z_dim,
-                "rec_x_weight":10,
+                "rec_x_weight":100,
                 "encrypt_with_noise": True,
                 "optimizer":{
                     "type": "adam",
