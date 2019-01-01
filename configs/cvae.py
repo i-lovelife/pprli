@@ -8,7 +8,7 @@ class Config:
     def __init__(self, config):
         self.config  = config
     @classmethod
-    def make_config(self, NAME)
+    def make_config(self, NAME):
         config={
             "privater":{
                 "type":"cvae",
