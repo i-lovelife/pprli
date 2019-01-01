@@ -68,6 +68,8 @@ def main(name, show, debug, gpu):
     dataset.show_info()
     
     trainer_config = config.pop('trainer', {'type': 'adv', 'epochs':50})
+    if debug:
+        trainer_config['epochs'] = 5
     trainer = Trainer.from_hp(trainer_config)
     evaluaters_config = config.pop('evaluaters', [{'type': 'utility', 'z_dim':64}, 
                                                   {'type': 'private', 'z_dim':64, 'num_classes':2},
