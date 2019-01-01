@@ -1,7 +1,9 @@
-{
+NAME="cvae-su"
+z_dim=64
+config={
     "privater":{
         "type":"cvae-su",
-        "z_dim":64,
+        "z_dim":z_dim,
         "rec_x_weight":10
     },
     "dataset":{
@@ -13,13 +15,13 @@
     },
     "evaluaters":[
         {"type":"utility",
-         "z_dim":64
+         "z_dim":z_dim
         },
         {"type":"private",
-         "z_dim":64
+         "z_dim":z_dim
         },
         {"type":"reconstruction",
-         "base_dir": "cvae-su"
+         "base_dir": NAME
         }
     ]
 }

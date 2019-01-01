@@ -22,6 +22,8 @@ from src.privater import Privater
 from src import CONFIG_ROOT, EXPERIMENT_ROOT
 from src.util.tee_logging import TeeLogger
 from src.callbacks import EvaluaterCallback
+import importlib
+
 
 @click.command()
 @click.option('--name', default=None)
@@ -31,16 +33,15 @@ from src.callbacks import EvaluaterCallback
 def main(name, show, debug, gpu):
     os.environ["CUDA_VISIBLE_DEVICES"] = gpu
     if name is not None:
-        config_path = CONFIG_ROOT / (name+'.json')
-        with config_path.open() as f:
-            config = json.load(f)
+        config_mod = importlib.import_module('configs.'+name)
+        config = config_mod.config
         experiment_path = EXPERIMENT_ROOT / name
-        if experiment_path.exists():
-            rmtree(experiment_path)
-        experiment_path.mkdir()
+        experiment_path.mkdir(parents=True, exist_ok=True)
         
         log_path = experiment_path / 'stdout.log'
-        copyfile(config_path, experiment_path/ (name+'.json'))
+        if log_path.exists():
+            log_path.unlink()
+        copyfile(CONFIG_ROOT/f'{name}.py', experiment_path/f'{name}.py')
         
         sys.stdout = TeeLogger(log_path, sys.stdout)
         sys.stderr = TeeLogger(log_path, sys.stderr)
