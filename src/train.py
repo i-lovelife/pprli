@@ -69,7 +69,7 @@ def main(name, show, debug, gpu):
     
     trainer_config = config.pop('trainer', {'type': 'adv', 'epochs':50})
     if debug:
-        trainer_config['epochs'] = 5
+        trainer_config['epochs'] = 2
     trainer = Trainer.from_hp(trainer_config)
     evaluaters_config = config.pop('evaluaters', [{'type': 'utility', 'z_dim':64}, 
                                                   {'type': 'private', 'z_dim':64, 'num_classes':2},
@@ -78,7 +78,7 @@ def main(name, show, debug, gpu):
     callbacks = [EvaluaterCallback(Evaluater.from_hp(evaluater_config), dataset, privater) for evaluater_config in evaluaters_config]
     historys = trainer.train(dataset, worker=privater, callbacks=callbacks)
     for i in range(trainer.epochs):
-        output = ' '.join([f'{key}: {value}' for key, value in historys.items()])
+        output = ' '.join([f'{key}: {value[i]}' for key, value in historys.items()])
         print(f'epochs:{i} {output}')
 if __name__ == '__main__':
     main()

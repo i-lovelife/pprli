@@ -7,7 +7,9 @@ def collect_history(callbacks):
     for idx, callback in enumerate(callbacks):
         output = callback.get_output_history()
         if output is not None:
-            history[f'{type(callback).__name__}_idx'] = output
+            key, value = output
+            if value != []:
+                history[f'{key}_{idx}'] = value
     return history
 
 class Trainer(Registerable):

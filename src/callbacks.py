@@ -23,7 +23,7 @@ class EvaluaterCallback(Callback):
             print(f'epoch {epoch}: output {type(self.evaluater).__name__} = {output}')
             self.output_history.append(output)
     def get_output_history(self):
-        return self.output_history
+        return type(self.evaluater).__name__, self.output_history
 
 class EarlyStopping(Callback):
     def __init__(self,
