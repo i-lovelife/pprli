@@ -34,17 +34,22 @@ import importlib
 def main(name, show, debug, gpu, hpc):
     os.environ["CUDA_VISIBLE_DEVICES"] = gpu
     if name is not None:
-        if hpc:
-            config_mod = importlib.import_module(f'experiments.{name}.{name}')
-        else:
-            config_mod = importlib.import_module('configs.'+name)
-        config = config_mod.config
         experiment_path = EXPERIMENT_ROOT / name
         experiment_path.mkdir(parents=True, exist_ok=True)
-        
+
         log_path = experiment_path / 'stdout.log'
         if log_path.exists():
             log_path.unlink()
+
+        config_path = experiment_path / 'config.json'
+        if hpc == False:
+            config_cls = importlib.import_module(f'configs.{name}.Config')
+            config_ins = config_cls.get_default()
+            config_ins.save(config_path)
+
+        with config_path.open() as f:
+            config = json.load(f)
+        print(config)
         
         sys.stdout = TeeLogger(log_path, sys.stdout)
         sys.stderr = TeeLogger(log_path, sys.stderr)
