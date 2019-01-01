@@ -26,7 +26,7 @@ class AdVaeConfig(Config):
             },
             "trainer":{
                 "type":"adv",
-                "d_iter":1,
+                "d_iter":2,
                 "epochs":100
             },
             "evaluaters":[
