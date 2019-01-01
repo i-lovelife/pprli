@@ -8,7 +8,7 @@ EXPERIMENT_DIR="$ROOT_DIR/experiments/$NEW_NAME"
 PBS_PATH="$EXPERIMENT_DIR/$NEW_NAME.pbs"
 
 COMMAND="python src/train.py --name $NEW_NAME --hpc"
-MAKE_CONFIG_COMMAND="python configs/$NAME.py --name $NEW_NAME"
+MAKE_CONFIG_COMMAND="python configs/make_config.py --type $NAME --name $NEW_NAME"
 
 echo "MAKE_CONFIG_COMMAND=$MAKE_CONFIG_COMMAND"
 echo "COMMAND=$COMMAND"

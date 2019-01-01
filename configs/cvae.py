@@ -1,12 +1,10 @@
-import click
-import ujson as json
-from src import EXPERIMENT_ROOT
+from configs.config import Config
 
 z_dim=64
 evaluation_verbose=False
-class Config:
-    def __init__(self, config):
-        self.config  = config
+
+@Config.register('cvae')
+class CvaeConfig(Config):
     @classmethod
     def make_config(self, NAME):
         config={
@@ -42,15 +40,4 @@ class Config:
             ]
         }
         return Config(config)
-    def save(self, path):
-        with path.open(mode='w') as f:
-            json.dump(self.config, f)
 
-@click.command()
-@click.option('--name', type=str)
-def main(name):
-    config = Config.make_config(name)
-    config.save(EXPERIMENT_ROOT / f'{name}' / 'config.json')
-
-if __name__=='__main__':
-    main()

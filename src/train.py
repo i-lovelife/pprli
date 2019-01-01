@@ -22,6 +22,7 @@ from src.privater import Privater
 from src import CONFIG_ROOT, EXPERIMENT_ROOT
 from src.util.tee_logging import TeeLogger
 from src.callbacks import EvaluaterCallback
+from configs.make_config import make_config
 import importlib
 
 
@@ -43,10 +44,7 @@ def main(name, show, debug, gpu, hpc):
 
         config_path = experiment_path / 'config.json'
         if hpc == False:
-            config_mod = importlib.import_module(f'configs.{name}')
-            config_cls = getattr(config_mod, 'Config')
-            config_ins = config_cls.make_config(name)
-            config_ins.save(config_path)
+            make_config(name)
 
         with config_path.open() as f:
             config = json.load(f)
