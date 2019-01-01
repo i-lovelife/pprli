@@ -13,7 +13,7 @@ class AdVaeConfig(Config):
             "privater":{
                 "type":"ad_vae",
                 "z_dim":z_dim,
-                "rec_x_weight":64*64/10,
+                "rec_x_weight":64*64*3,
                 "prior_weight": 1,
                 "encrypt_with_noise": True,
                 "optimizer":{
