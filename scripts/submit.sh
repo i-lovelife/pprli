@@ -17,6 +17,7 @@ echo $COMMAND >> $PBS_PATH
 git add --all
 git commit -m "Experiment $COMMAND"
 echo "#$(git rev-parse HEAD)" >> $PBS_PATH
+$COMMAND
 exit 1
 cd $EXPERIMENT_DIR
 jobid=$(qsub $PBS_PATH)
