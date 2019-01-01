@@ -43,8 +43,9 @@ def main(name, show, debug, gpu, hpc):
 
         config_path = experiment_path / 'config.json'
         if hpc == False:
-            config_cls = importlib.import_module(f'configs.{name}.Config')
-            config_ins = config_cls.get_default()
+            config_mod = importlib.import_module(f'configs.{name}')
+            config_cls = getattr(config_mod, 'Config')
+            config_ins = config_cls.make_config(name)
             config_ins.save(config_path)
 
         with config_path.open() as f:

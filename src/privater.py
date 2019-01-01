@@ -9,8 +9,10 @@ from src.util.worker import Worker
 
 class Privater(Worker):
     _default_type='vae'
-    def __init__(self, **args):
+    def __init__(self, 
+                 **args):
         super().__init__(**args)
+        
     def predict(self, data):
         raise NotImplementedError
     
@@ -61,16 +63,14 @@ def build_encoder(img_dim=64,
     z = Dense(z_dim)(x)
     return Model(x_in, z)
 
-def build_classifier(img_dim=64, 
-                     num_classes=6,
-                     z_dim=128,
-                     **args):
-    args['use_gauss_prior'] = False
-    encoder = build_encoder(z_dim=z_dim, img_dim=img_dim, **args)
-    x_in = Input(shape=(img_dim, img_dim, 3))
-    x = encoder(x_in)
-    x = Dense(num_classes, activation='softmax')(x)
-    return Model(x_in, x)
+def build_classifier(num_classes=6,
+                     bottleneck_dim=32,
+                     z_dim=128):
+    z_in = Input(shape=(z_dim, ))
+    z = z_in
+    z = Dense(bottleneck_dim, activation='relu')(z)
+    z = Dense(num_classes, activation='softmax')(z)
+    return Model(z_in, z)
 
 def build_discriminator(img_dim=64,
                         num_classes=-1,
@@ -114,6 +114,11 @@ def gauss_sampling(args):
     z_mean, z_log_var = args
     u = K.random_normal(shape=K.shape(z_mean))
     return z_mean + K.exp(z_log_var / 2) * u
+def np_gauss_sampling(args):
+    z_mean, z_log_var = args
+    u = np.random.normal(z_mean, np.exp(z_log_var / 2), size=z_mean.shape)
+    #return z_mean + np.exp(z_log_var / 2) * u
+    return u
 
 def gauss_loss_func(args):
     z_mean, z_log_var = args
@@ -155,7 +160,7 @@ class Vae(Privater):
         self.train_model = train_model
     
     def get_input(self, data):
-        x, y, p = data['x'], data['y'], data['p']
+        x, p = data['x'], data['p']
         return (x, {'prior':x, 'rec_x':x})
     def predict(self, data):
         x, y, p = data['x'], data['y'], data['p']
@@ -174,7 +179,7 @@ class CVae(Privater):
                  z_dim=128,
                  p_dim=6,
                  rec_x_weight=64*64/10,
-                 encrypt_with_noise=False,
+                 encrypt_with_noise=True,
                  **args
                  ):
         super().__init__(**args)
@@ -215,22 +220,19 @@ class CVae(Privater):
         self.encrypt_with_noise = encrypt_with_noise
     
     def get_input(self, data):
-        x, y, p = data['x'], data['y'], data['p']
+        x, p = data['x'], data['p']
         return ([x, p], {'prior':x, 'rec_x':x})
     def predict(self, data):
         x, y, p = data['x'], data['y'], data['p']
         x, _ = self.encoder.predict([x, p])
         if self.encrypt_with_noise:
-            def np_gauss_sampling(args):
-                z_mean, z_log_var = args
-                u = np.random.normal(z_mean, np.exp(z_log_var / 2), size=z_mean.shape)
-                #return z_mean + np.exp(z_log_var / 2) * u
-                return u
             x = np_gauss_sampling([x, _])
         return {'x': x, 'y': y, 'p': p}
     def reconstruct(self, data):
         x, y, p = data['x'], data['y'], data['p']
         x, _ = self.encoder.predict([x, p])
+        if self.encrypt_with_noise:
+            x = np_gauss_sampling([x, _])
         x = self.decoder.predict(np.concatenate([x, p], axis=-1))
         return {'x': x, 'y': y, 'p': p}
         
@@ -279,7 +281,7 @@ class CvaeSu(Privater):
         self.train_model = train_model
     
     def get_input(self, data):
-        x, y, p = data['x'], data['y'], data['p']
+        x, p = data['x'], data['p']
         return ([x, p], {'prior':x, 'rec_x':x})
     def predict(self, data):
         x, y, p = data['x'], data['y'], data['p']
@@ -290,12 +292,107 @@ class CvaeSu(Privater):
     def reconstruct(self, data):
         x, y, p = data['x'], data['y'], data['p']
         x, _ = self.encoder.predict(x)
+        if self.encrypt_with_noise:
+            x = np_gauss_sampling([x, _])
         x = self.decoder.predict(x)
         return {'x': x, 'y': y, 'p': p}
     
+class AdvModel(Privater):
+    def __init__(self, **args):
+        super().__init__(**args)
+    def get_input(self, data):
+        pass
+    def get_input_d(self, data1, data2):
+        raise NotImplementedError
+    def get_input_g(self, data1, data2):
+        raise NotImplementedError
+
+@Privater.register('ad_vae')
+class AdVae(AdvModel):
+    def __init__(self,
+                 img_dim=64,
+                 z_dim=128,
+                 p_dim=6,
+                 rec_x_weight=64*64/10,
+                 prior_weight=1,
+                 encrypt_with_noise=True,
+                 **args
+                 ):
+        super().__init__(**args)
+        encoder = build_encoder(img_dim=img_dim,
+                                z_dim=z_dim,
+                                use_max_pooling=True, 
+                                drop_out=-1,
+                                use_gauss_prior=True)
+        decoder = build_decoder(img_dim=img_dim,
+                                z_dim=z_dim)
+        classifier = build_classifier(z_dim=z_dim,
+                                      num_classes=p_dim)
+        x_in = Input(shape=(img_dim, img_dim, 3))
+        x = x_in
+        z_mean, z_log_var = encoder(x)
+        gauss_loss = Lambda(gauss_loss_func, name='prior')([z_mean, z_log_var])
+        
+        z = Lambda(gauss_sampling)([z_mean, z_log_var])
+        pred_p = classifier(z)
+        pred_p = Lambda(lambda x: x, name='pred_p')(pred_p)
+        rec_x = decoder(z)
+        rec_x = Lambda(lambda x: x, name='rec_x')(rec_x)
+        
+        #build g_train_model
+        encoder.trainable = True
+        decoder.trainable = True
+        classifier.trainable = False
+        g_train_model = Model([x_in], [rec_x, pred_p, gauss_loss])
+        g_train_model.compile(optimizer=self.optimizer,
+                              loss={'prior': identity_loss, 
+                                    'rec_x': 'mean_squared_error', 
+                                    'pred_p': 'categorical_crossentropy'},
+                              loss_weights={'prior': prior_weight, 
+                                            'rec_x': rec_x_weight,
+                                            'pred_p': -1},
+                              metrics={'pred_p': 'acc'})
+        
+        #build d_train_model
+        encoder.trainable = False
+        decoder.trainable = False
+        classifier.trainable = True
+        d_train_model = Model([x_in], [pred_p])
+        d_train_model.compile(optimizer=self.optimizer,
+                              loss={'pred_p': 'categorical_crossentropy'},
+                              loss_weights={'pred_p': 1},
+                              metrics={'pred_p': 'acc'})
+        
+        self.encoder = encoder
+        self.decoder = decoder
+        self.classifier = classifier
+        self.train_model = g_train_model
+        self.g_train_model = g_train_model
+        self.d_train_model = d_train_model
+        self.encrypt_with_noise = encrypt_with_noise
+    
+    def get_input_g(self, data1, data2):
+        x1, p1 = data1['x'], data1['p']
+        return (x1, {'rec_x': x1, 'pred_p': p1, 'prior': x1})
+    def get_input_d(self, data1, data2):
+        x1, p1 = data1['x'], data1['p']
+        return (x1, {'pred_p': p1})
+    def predict(self, data):
+        x, y, p = data['x'], data['y'], data['p']
+        x, _ = self.encoder.predict(x)
+        if self.encrypt_with_noise:
+            x = np_gauss_sampling([x, _])
+        return {'x': x, 'y': y, 'p': p}
+    def reconstruct(self, data):
+        x, y, p = data['x'], data['y'], data['p']
+        x, _ = self.encoder.predict(x)
+        if self.encrypt_with_noise:
+            x = np_gauss_sampling([x, _])
+        x = self.decoder.predict(x)
+        return {'x': x, 'y': y, 'p': p}
     
 @Privater.register('gpf')
-class Gpf(Privater):
+class Gpf(AdvModel):
     def __init__(self,
                  img_dim=64,
                  z_dim=128,
