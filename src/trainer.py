@@ -12,9 +12,10 @@ def collect_history(callbacks):
 
 class Trainer(Registerable):
     _default_type='keras'
-    def __init__(self, epochs=5, batch_size=128):
+    def __init__(self, epochs=5, batch_size=128, verbose=True):
         self.epochs = epochs
         self.batch_size = batch_size
+        self.verbose = verbose
     def train(self, datasaet, worker=None, evaluaters=None, callbacks=[]):
         raise NotImplementedError
 
@@ -89,6 +90,7 @@ class KerasTrainer(Trainer):
                                epochs=self.epochs, 
                                batch_size=self.batch_size,
                                validation_data=worker.get_input(test_data),
+                               verbose= self.verbose,
                                callbacks=callbacks)
         
         history = collect_history(callbacks)

@@ -4,12 +4,13 @@ import imageio
 from keras.models import Model
 from keras.layers import *
 from keras import backend as K
-from keras.optimizers import Adam
 from keras.utils import to_categorical
 from src.util.worker import Worker
 
 class Privater(Worker):
     _default_type='vae'
+    def __init__(self, **args):
+        super().__init__(**args)
     def predict(self, data):
         raise NotImplementedError
     
@@ -125,8 +126,10 @@ class Vae(Privater):
     def __init__(self,
                  img_dim=64,
                  z_dim=128,
-                 loss_weights={'prior':1, 'rec_x': 64*64/10}
+                 loss_weights={'prior':1, 'rec_x': 64*64/10},
+                 **args
                  ):
+        super().__init__(**args)
         encoder = build_encoder(img_dim=img_dim,
                                 z_dim=z_dim,
                                 use_max_pooling=True, 
@@ -143,7 +146,7 @@ class Vae(Privater):
         rec_x = Lambda(lambda x: x, name="rec_x")(rec_x)
         train_model = Model(x_in, [rec_x, gauss_loss])
         
-        train_model.compile(optimizer=Adam(1e-3),
+        train_model.compile(optimizer=self.optimizer,
                             loss={'prior': identity_loss, 'rec_x': 'mean_squared_error'},
                             loss_weights=loss_weights
                             )
@@ -164,14 +167,17 @@ class Vae(Privater):
         x = self.decoder.predict(x)
         return {'x': x, 'y': y, 'p': p}
     
-@Privater.register('c_vae')
+@Privater.register('cvae')
 class CVae(Privater):
     def __init__(self,
                  img_dim=64,
                  z_dim=128,
                  p_dim=6,
-                 rec_x_weight=64*64/10
+                 rec_x_weight=64*64/10,
+                 encrypt_with_noise=False,
+                 **args
                  ):
+        super().__init__(**args)
         def build_c_encoder():
             encoder = build_encoder(img_dim=img_dim,
                                     z_dim=2*z_dim,
@@ -182,6 +188,7 @@ class CVae(Privater):
             p_in = Input(shape=(p_dim,))
             z = encoder(x_in)
             z = Concatenate()([z, p_in])
+            z = Dense(z_dim, activation='relu')(z)
             z_mean = Dense(z_dim)(z)
             z_log_var = Dense(z_dim)(z)
             return Model([x_in, p_in], [z_mean, z_log_var])
@@ -198,13 +205,14 @@ class CVae(Privater):
         rec_x = Lambda(lambda x: x, name="rec_x")(rec_x)
         train_model = Model([x_in, p_in], [rec_x, gauss_loss])
         
-        train_model.compile(optimizer=Adam(1e-3),
+        train_model.compile(optimizer=self.optimizer,
                             loss={'prior': identity_loss, 'rec_x': 'mean_squared_error'},
                             loss_weights={'prior':1, 'rec_x': rec_x_weight}
                             )
         self.encoder = encoder
         self.decoder = decoder
         self.train_model = train_model
+        self.encrypt_with_noise = encrypt_with_noise
     
     def get_input(self, data):
         x, y, p = data['x'], data['y'], data['p']
@@ -212,6 +220,13 @@ class CVae(Privater):
     def predict(self, data):
         x, y, p = data['x'], data['y'], data['p']
         x, _ = self.encoder.predict([x, p])
+        if self.encrypt_with_noise:
+            def np_gauss_sampling(args):
+                z_mean, z_log_var = args
+                u = np.random.normal(z_mean, np.exp(z_log_var / 2), size=z_mean.shape)
+                #return z_mean + np.exp(z_log_var / 2) * u
+                return u
+            x = np_gauss_sampling([x, _])
         return {'x': x, 'y': y, 'p': p}
     def reconstruct(self, data):
         x, y, p = data['x'], data['y'], data['p']
@@ -226,8 +241,10 @@ class CvaeSu(Privater):
                  img_dim=64,
                  z_dim=128,
                  p_dim=6,
-                 rec_x_weight=64*64/10
+                 rec_x_weight=64*64/10,
+                 **args
                  ):
+        super().__init__(**args)
         encoder = build_encoder(img_dim=img_dim,
                                 z_dim=z_dim,
                                 use_max_pooling=True, 
@@ -252,7 +269,7 @@ class CvaeSu(Privater):
         rec_x = Lambda(lambda x: x, name="rec_x")(rec_x)
         train_model = Model([x_in, p_in], [rec_x, gauss_loss])
         
-        train_model.compile(optimizer=Adam(1e-3),
+        train_model.compile(optimizer=self.optimizer,
                             loss={'prior': identity_loss, 'rec_x': 'mean_squared_error'},
                             loss_weights={'prior':1, 'rec_x': rec_x_weight}
                             )
@@ -285,8 +302,10 @@ class Gpf(Privater):
                  p_dim=6,
                  real_rec_x_weight=10,
                  fake_rec_z_weight=10,
-                 judge_loss_weight=1
+                 judge_loss_weight=1,
+                 **args
                  ):
+        super().__init__(**args)
         encoder = build_encoder(img_dim=img_dim,
                                 z_dim=z_dim,
                                 use_max_pooling=True, 
@@ -334,7 +353,7 @@ class Gpf(Privater):
         g_train_model = Model([real_x_in, rnd_x_in, real_p_in, fake_p_in], 
                               [real_rec_x, fake_rec_z, fake_classify, rnd_classify, g_judge_loss])
         
-        g_train_model.compile(optimizer=Adam(1e-3),
+        g_train_model.compile(optimizer=self.optimizer,
                             loss={'real_rec_x': 'mean_squared_error',
                                   'fake_rec_z': identity_loss,
                                   'fake_classify': 'categorical_crossentropy',
@@ -364,7 +383,7 @@ class Gpf(Privater):
         d_train_model = Model([real_x_in, rnd_x_in, fake_p_in],
                               [fake_classify, rnd_classify, d_judge_loss]
                               )
-        d_train_model.compile(optimizer=Adam(1e-3),
+        d_train_model.compile(optimizer=self.optimizer,
                               loss={'fake_classify': 'categorical_crossentropy',
                                     'rnd_classify': 'categorical_crossentropy',
                                     'd_judge_loss': identity_loss
@@ -438,8 +457,10 @@ class Adae(Privater):
                  img_dim=64,
                  z_dim=128,
                  g_train_weights={'p':-1, 'rec_x':50},
-                 d_train_weights={'p':1}
+                 d_train_weights={'p':1},
+                 **args
                  ):
+        super().__init__(**args)
         encoder = build_encoder(img_dim=img_dim,
                                 z_dim=z_dim,
                                 use_max_pooling=True, 
@@ -468,7 +489,7 @@ class Adae(Privater):
         encoder.trainable = True
         decoder.trainable = True
         classifier.trainable = False
-        g_train_model.compile(optimizer=Adam(1e-3),
+        g_train_model.compile(optimizer=self.optimizer,
                               loss={'p': 'categorical_crossentropy', 'rec_x': 'mean_squared_error'},
                               loss_weights=g_train_weights,
                               metrics={'p': 'acc'})
@@ -478,7 +499,7 @@ class Adae(Privater):
         encoder.trainable = False
         decoder.trainable = False
         classifier.trainable = True
-        d_train_model.compile(optimizer=Adam(1e-3),
+        d_train_model.compile(optimizer=self.optimizer,
                               loss={'p': 'categorical_crossentropy'},
                               loss_weights=d_train_weights,
                               metrics={'p': 'acc'})

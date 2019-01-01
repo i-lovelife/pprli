@@ -15,6 +15,8 @@ from src import EXPERIMENT_ROOT
 
 class Evaluater(Worker):
     _default_type='private'
+    def __init__(self, **args):
+        super().__init__(**args)
     def build_model(self, data):
         raise NotImplementedError
     
@@ -44,7 +46,9 @@ class ImgReconstructionEvaluater(Evaluater):
                  base_dir=None,
                  img_dim=64,
                  selected_y=[0, 1, 2, 3, 4, 5, 6],
-                 selected_p=[0, 1, 2, 3, 4, 5]):
+                 selected_p=[0, 1, 2, 3, 4, 5],
+                 **args):
+        super().__init__(**args)
         if base_dir is not None:
             base_dir = EXPERIMENT_ROOT / base_dir / type(self).__name__
             base_dir.mkdir(exist_ok=True)
@@ -82,25 +86,15 @@ class ImgReconstructionEvaluater(Evaluater):
         
 @Evaluater.register('latent_visual')
 class LatentVisualizationEvaluater(ImgReconstructionEvaluater):
+    def __init__(self, num_each_classes=1000, **args):
+        super().__init__(**args)
+        self.num_each_classes = num_each_classes
+        
     def evaluate(self,
                  dataset,
                  privater,
                  epoch):
-        if self.base_dir is None:
-            return
-        img_dim = self.img_dim
-        selected_p = self.selected_p
-        selected_y = self.selected_y
-        img_path=f'{str(self.base_dir/str(epoch))}.png'
-        figure = np.zeros((img_dim * len(selected_p), img_dim * len(selected_y), 3))
-        for i, p in enumerate(selected_p):
-            for j, y in enumerate(selected_y):
-                data = dataset.sample(selected_y=[y], selected_p=[p], num=1)
-                rec_data = privater.reconstruct(data)
-                rec_data = dataset.de_process(rec_data)
-                figure[i * img_dim:(i + 1) * img_dim,
-                       j * img_dim:(j + 1) * img_dim] = rec_data['x']
-        imageio.imwrite(img_path, figure)
+        pass
 
 class DownTaskEvaluater(Evaluater):
     def __init__(self,
@@ -108,7 +102,9 @@ class DownTaskEvaluater(Evaluater):
                  z_dim=128,
                  epochs=20,
                  batch_size=64,
-                 verbose=False):
+                 verbose=False,
+                 **args):
+        super().__init__(**args)
         self.num_classes= num_classes
         self.z_dim = z_dim
         self.verbose = verbose
@@ -121,7 +117,7 @@ class DownTaskEvaluater(Evaluater):
         x = Dense(z_dim, activation='relu')(x)
         x = Dense(num_classes, activation='softmax')(x)
         model = Model(x_in, x)
-        model.compile(optimizer=Adam(1e-3), loss='categorical_crossentropy', metrics=['acc'])
+        model.compile(optimizer=self.optimizer, loss='categorical_crossentropy', metrics=['acc'])
         return model
     def evaluate(self,
                  dataset,
@@ -136,7 +132,7 @@ class DownTaskEvaluater(Evaluater):
         dataset = Dataset(train_data=train_data, test_data=test_data)
         early_stopping = EarlyStopping()
         callbacks = [early_stopping]
-        trainer = KerasTrainer(batch_size=self.batch_size, epochs=self.epochs)
+        trainer = KerasTrainer(batch_size=self.batch_size, epochs=self.epochs, verbose=self.verbose)
         trainer.train(dataset, self, callbacks=callbacks)
         return min(early_stopping.best_val_acc, early_stopping.best_acc)
     

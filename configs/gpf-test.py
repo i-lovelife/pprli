@@ -1,7 +1,9 @@
-{
+NAME="vae-test"
+z_dim=64
+config={
     "privater":{
         "type":"gpf",
-        "z_dim":64,
+        "z_dim":z_dim,
         "p_dim":2,
         "fake_rec_z_weight":100,
         "real_rec_x_weight":1
@@ -15,13 +17,13 @@
     },
     "evaluaters":[
         {"type":"utility",
-         "z_dim":64
+         "z_dim":z_dim
         },
         {"type":"private",
-         "z_dim":64
+         "z_dim":z_dim
         },
         {"type":"reconstruction",
-         "base_dir": "gpf-test"
+         "base_dir": NAME
         }
     ]
 }
