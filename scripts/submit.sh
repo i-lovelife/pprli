@@ -14,14 +14,12 @@ echo "MAKE_CONFIG_COMMAND=$MAKE_CONFIG_COMMAND"
 echo "COMMAND=$COMMAND"
 mkdir -p $EXPERIMENT_DIR
 cp scripts/template.pbs $PBS_PATH
-echo $MAKE_CONFIG_COMMAND >> $PBS_PATH
+echo "#$MAKE_CONFIG_COMMAND" >> $PBS_PATH
 echo $COMMAND >> $PBS_PATH
+$MAKE_CONFIG_COMMAND
 git add --all
 git commit -m "Experiment $COMMAND"
 echo "#$(git rev-parse HEAD)" >> $PBS_PATH
-$MAKE_CONFIG_COMMAND && \
-$COMMAND
-exit 1
 cd $EXPERIMENT_DIR
 jobid=$(qsub $PBS_PATH)
 echo $jobid
