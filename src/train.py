@@ -46,7 +46,6 @@ def main(name, show, debug, gpu, hpc):
         log_path = experiment_path / 'stdout.log'
         if log_path.exists():
             log_path.unlink()
-        copyfile(CONFIG_ROOT/f'{name}.py', experiment_path/f'{name}.py')
         
         sys.stdout = TeeLogger(log_path, sys.stdout)
         sys.stderr = TeeLogger(log_path, sys.stderr)
