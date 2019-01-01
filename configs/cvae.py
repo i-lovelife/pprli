@@ -8,9 +8,8 @@ config={
         "rec_x_weight":64*64/10,
         "encrypt_with_noise": True,
         "optimizer":{
-            "type": "rmsprop",
-            "lr":0.0003,
-            "decay":1e-6
+            "type": "adam",
+            "lr":0.0001,
         }
     },
     "dataset":{
