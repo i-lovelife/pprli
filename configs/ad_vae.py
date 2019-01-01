@@ -18,7 +18,7 @@ class AdVaeConfig(Config):
                 "encrypt_with_noise": True,
                 "optimizer":{
                     "type": "adam",
-                    "lr":0.0003,
+                    "lr":0.0001,
                 }
             },
             "dataset":{
