@@ -29,11 +29,15 @@ import importlib
 @click.option('--name', default=None)
 @click.option('--show/--no-show', default=False)
 @click.option('--debug/--no-debug', default=False)
+@click.option('--hpc/--no-hpc', default=False)
 @click.option('--gpu', type=click.Choice(['0', '1', '2', '3']), default='0')
-def main(name, show, debug, gpu):
+def main(name, show, debug, gpu, hpc):
     os.environ["CUDA_VISIBLE_DEVICES"] = gpu
     if name is not None:
-        config_mod = importlib.import_module('configs.'+name)
+        if hpc:
+            config_mod = importlib.import_module(f'experiments.{name}.{name}')
+        else:
+            config_mod = importlib.import_module('configs.'+name)
         config = config_mod.config
         experiment_path = EXPERIMENT_ROOT / name
         experiment_path.mkdir(parents=True, exist_ok=True)
