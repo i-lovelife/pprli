@@ -11,8 +11,8 @@ class CvaeMiConfig(Config):
             "privater":{
                 "type":"cvae_mi",
                 "z_dim":z_dim,
-                "global_weight":10,
-                "local_weight":15,
+                "global_weight":100,
+                "local_weight":150,
                 "encrypt_with_noise": True,
                 "optimizer":{
                     "type": "adam",
