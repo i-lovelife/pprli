@@ -1,6 +1,6 @@
 from configs.config import Config
 
-z_dim=64
+z_dim=32
 evaluation_verbose=False
 
 @Config.register('cvae_mi')
@@ -11,8 +11,8 @@ class CvaeMiConfig(Config):
             "privater":{
                 "type":"cvae_mi",
                 "z_dim":z_dim,
-                "global_weight":100,
-                "local_weight":150,
+                "global_weight":10,
+                "local_weight":15,
                 "encrypt_with_noise": True,
                 "optimizer":{
                     "type": "adam",
