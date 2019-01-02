@@ -1,6 +1,6 @@
 from configs.config import Config
 
-z_dim=32
+z_dim=128
 evaluation_verbose=False
 
 @Config.register('cvae_mi')
