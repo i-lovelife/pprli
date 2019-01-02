@@ -114,15 +114,22 @@ def gauss_sampling(args):
     z_mean, z_log_var = args
     u = K.random_normal(shape=K.shape(z_mean))
     return z_mean + K.exp(z_log_var / 2) * u
+
 def np_gauss_sampling(args):
     z_mean, z_log_var = args
     u = np.random.normal(z_mean, np.exp(z_log_var / 2), size=z_mean.shape)
     #return z_mean + np.exp(z_log_var / 2) * u
     return u
 
+def shuffling(x):
+    idxs = K.arange(0, K.shape(x)[0])
+    idxs = K.tf.random_shuffle(idxs)
+    return K.gather(x, idxs)
+
 def gauss_loss_func(args):
     z_mean, z_log_var = args
     return - 0.5 * K.mean(1 + z_log_var - K.square(z_mean) - K.exp(z_log_var))
+
 def identity_loss(y_true, y_pred):
     return y_pred
 
@@ -131,7 +138,8 @@ class Vae(Privater):
     def __init__(self,
                  img_dim=64,
                  z_dim=128,
-                 loss_weights={'prior':1, 'rec_x': 64*64/10},
+                 rec_x_weight=64*64/10,
+                 encrypt_with_noise=True,
                  **args
                  ):
         super().__init__(**args)
@@ -153,11 +161,12 @@ class Vae(Privater):
         
         train_model.compile(optimizer=self.optimizer,
                             loss={'prior': identity_loss, 'rec_x': 'mean_squared_error'},
-                            loss_weights=loss_weights
+                            loss_weights={'prior':1, 'rec_x': rec_x_weight}
                             )
         self.encoder = encoder
         self.decoder = decoder
         self.train_model = train_model
+        self.encrypt_with_noise = encrypt_with_noise
     
     def get_input(self, data):
         x, p = data['x'], data['p']
@@ -165,6 +174,8 @@ class Vae(Privater):
     def predict(self, data):
         x, y, p = data['x'], data['y'], data['p']
         x, _ = self.encoder.predict(x)
+        if self.encrypt_with_noise:
+            x = np_gauss_sampling([x, _])
         return {'x': x, 'y': y, 'p': p}
     def reconstruct(self, data):
         x, y, p = data['x'], data['y'], data['p']
@@ -222,6 +233,201 @@ class CVae(Privater):
     def get_input(self, data):
         x, p = data['x'], data['p']
         return ([x, p], {'prior':x, 'rec_x':x})
+    def predict(self, data):
+        x, y, p = data['x'], data['y'], data['p']
+        x, _ = self.encoder.predict([x, p])
+        if self.encrypt_with_noise:
+            x = np_gauss_sampling([x, _])
+        return {'x': x, 'y': y, 'p': p}
+    def reconstruct(self, data):
+        x, y, p = data['x'], data['y'], data['p']
+        x, _ = self.encoder.predict([x, p])
+        if self.encrypt_with_noise:
+            x = np_gauss_sampling([x, _])
+        x = self.decoder.predict(np.concatenate([x, p], axis=-1))
+        return {'x': x, 'y': y, 'p': p}
+    
+@Privater.register('cvae_mi')
+class CVaeMi(Privater):
+    def __init__(self,
+                 img_dim=64,
+                 z_dim=128,
+                 p_dim=6,
+                 global_weight=50,
+                 local_weight=150,
+                 encrypt_with_noise=True,
+                 **args
+                 ):
+        super().__init__(**args)
+        def build_global_dis():
+            z_in = Input(shape=(z_dim*2,))
+            z = z_in
+            z = Dense(z_dim, activation='relu')(z)
+            z = Dense(z_dim, activation='relu')(z)
+            z = Dense(z_dim, activation='relu')(z)
+            z = Dense(1, activation='sigmoid')(z)
+
+            return Model(z_in, z)
+        
+        def build_local_dis():
+            z_in = Input(shape=(None, None, z_dim*2))
+            z = z_in
+            z = Dense(z_dim, activation='relu')(z)
+            z = Dense(z_dim, activation='relu')(z)
+            z = Dense(z_dim, activation='relu')(z)
+            z = Dense(1, activation='sigmoid')(z)
+
+            return Model(z_in, z)
+
+        def build_custom_encoder():
+            x_in = Input(shape=(img_dim, img_dim, 3))
+            p_in = Input(shape=(p_dim,))
+            
+            x = x_in
+
+            for i in range(3):
+                x = Conv2D(z_dim // 2**(2-i),
+                           kernel_size=(3,3),
+                           padding='SAME')(x)
+                x = BatchNormalization()(x)
+                x = LeakyReLU(0.2)(x)
+                x = MaxPooling2D((2, 2))(x)
+
+            feature_map = x # 截断到这里，认为到这里是feature_map（局部特征）
+
+            for i in range(2):
+                x = Conv2D(z_dim,
+                           kernel_size=(3,3),
+                           padding='SAME')(x)
+                x = BatchNormalization()(x)
+                x = LeakyReLU(0.2)(x)
+
+            x = GlobalMaxPooling2D()(x) # 全局特征
+            
+            x = Dense(z_dim, activation='relu')(x)
+            z = Concatenate()([x, p_in])
+            z = Dense(z_dim, activation='relu')(z)
+            z_mean = Dense(z_dim)(z)
+            z_log_var = Dense(z_dim)(z)
+            return Model([x_in, p_in], [z_mean, z_log_var, feature_map])
+        
+        encoder = build_custom_encoder()
+        global_dis = build_global_dis()
+        local_dis = build_local_dis()
+        
+        x_in = Input(shape=(img_dim, img_dim, 3))
+        p_in = Input(shape=(p_dim,))
+        x = x_in
+        z_mean, z_log_var, feature_map = encoder([x, p_in])
+        z = Lambda(gauss_sampling)([z_mean, z_log_var])
+        gauss_loss = Lambda(gauss_loss_func, name='prior')([z_mean, z_log_var])
+        
+        # 与随机采样的特征拼接（全局）
+        z_samples = z
+        z_shuffle = Lambda(shuffling)(z_samples)
+        z_z_1 = Concatenate()([z_samples, z_samples])
+        z_z_2 = Concatenate()([z_samples, z_shuffle])
+
+        # 与随机采样的特征拼接（局部）
+        feature_map_shuffle = Lambda(shuffling)(feature_map)
+        z_samples_repeat = RepeatVector(8 * 8)(z_samples)
+        z_samples_map = Reshape((8, 8, z_dim))(z_samples_repeat)
+        z_f_1 = Concatenate()([z_samples_map, feature_map])
+        z_f_2 = Concatenate()([z_samples_map, feature_map_shuffle])
+        
+        
+        def binary_loss(args):
+            score_real, score_fake = args
+            return - K.mean(K.log(score_real + 1e-6) + K.log(1 - score_fake + 1e-6))
+        
+        z_z_1_scores = global_dis(z_z_1)
+        z_z_2_scores = global_dis(z_z_2)
+        global_info_loss = Lambda(binary_loss, name='global_info_loss')([z_z_1_scores, z_z_2_scores])
+        z_f_1_scores = local_dis(z_f_1)
+        z_f_2_scores = local_dis(z_f_2)
+        local_info_loss = Lambda(binary_loss, name='local_info_loss')([z_f_1_scores, z_f_2_scores])
+        
+        train_model = Model([x_in, p_in], [gauss_loss, global_info_loss, local_info_loss])
+        
+        train_model.compile(optimizer=self.optimizer,
+                            loss={'prior': identity_loss, 'global_info_loss': identity_loss, 'local_info_loss': identity_loss},
+                            loss_weights={'prior':1, 'global_info_loss':global_weight, 'local_info_loss': local_weight}
+                            )
+        self.encoder = encoder
+        self.train_model = train_model
+        self.encrypt_with_noise = encrypt_with_noise
+    
+    def get_input(self, data):
+        x, p = data['x'], data['p']
+        return ([x, p], {'prior':x, 'global_info_loss':x, 'local_info_loss': x})
+    def predict(self, data):
+        x, y, p = data['x'], data['y'], data['p']
+        x, _, feature_map = self.encoder.predict([x, p])
+        if self.encrypt_with_noise:
+            x = np_gauss_sampling([x, _])
+        return {'x': x, 'y': y, 'p': p}
+    def reconstruct(self, data):
+        x, y, p = data['x'], data['y'], data['p']
+        return {'x': x, 'y': y, 'p': p}    
+    
+    
+@Privater.register('cvae_y')
+class CVaeY(Privater):
+    def __init__(self,
+                 img_dim=64,
+                 z_dim=128,
+                 p_dim=6,
+                 y_dim=7,
+                 rec_x_weight=64*64/10,
+                 pred_y_weight=1,
+                 encrypt_with_noise=True,
+                 **args
+                 ):
+        super().__init__(**args)
+        def build_c_encoder():
+            encoder = build_encoder(img_dim=img_dim,
+                                    z_dim=2*z_dim,
+                                    use_max_pooling=True, 
+                                    drop_out=-1,
+                                    use_gauss_prior=False)
+            x_in = Input(shape=(img_dim, img_dim, 3))
+            p_in = Input(shape=(p_dim,))
+            z = encoder(x_in)
+            z = Concatenate()([z, p_in])
+            z = Dense(z_dim, activation='relu')(z)
+            z_mean = Dense(z_dim)(z)
+            z_log_var = Dense(z_dim)(z)
+            return Model([x_in, p_in], [z_mean, z_log_var])
+        encoder = build_c_encoder()
+        classifier = build_classifier(z_dim=z_dim, num_classes=y_dim)
+        x_in = Input(shape=(img_dim, img_dim, 3))
+        p_in = Input(shape=(p_dim,))
+        x = x_in
+        z_mean, z_log_var = encoder([x, p_in])
+        z = Lambda(gauss_sampling)([z_mean, z_log_var])
+        pred_y = classifier(z)
+        pred_y = Lambda(lambda x: x, name='pred_y')(pred_y)
+        gauss_loss = Lambda(gauss_loss_func, name='prior')([z_mean, z_log_var])
+        decoder = build_decoder(img_dim=img_dim,
+                                z_dim=z_dim+p_dim)
+        rec_x = decoder(Concatenate()([z, p_in]))
+        rec_x = Lambda(lambda x: x, name="rec_x")(rec_x)
+        train_model = Model([x_in, p_in], [rec_x, gauss_loss, pred_y])
+        
+        train_model.compile(optimizer=self.optimizer,
+                            loss={'prior': identity_loss, 'rec_x': 'mean_squared_error', 'pred_y':'categorical_crossentropy'},
+                            loss_weights={'prior':1, 'rec_x': rec_x_weight, 'pred_y': pred_y_weight},
+                            metrics={'pred_y': 'acc'}
+                            )
+        self.encoder = encoder
+        self.decoder = decoder
+        self.train_model = train_model
+        self.encrypt_with_noise = encrypt_with_noise
+    
+    def get_input(self, data):
+        x, p = data['x'], data['p']
+        y = data['y']
+        return ([x, p], {'prior':x, 'rec_x':x, 'pred_y': y})
     def predict(self, data):
         x, y, p = data['x'], data['y'], data['p']
         x, _ = self.encoder.predict([x, p])
