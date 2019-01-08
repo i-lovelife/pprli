@@ -27,34 +27,35 @@ import importlib
 
 
 @click.command()
-@click.option('--name', default=None)
+@click.option('--name', default='cvae')
 @click.option('--show/--no-show', default=False)
 @click.option('--debug/--no-debug', default=False)
 @click.option('--hpc/--no-hpc', default=False)
 @click.option('--gpu', type=click.Choice(['0', '1', '2', '3']), default='0')
 def main(name, show, debug, gpu, hpc):
     os.environ["CUDA_VISIBLE_DEVICES"] = gpu
-    if name is not None:
-        experiment_path = EXPERIMENT_ROOT / name
-        experiment_path.mkdir(parents=True, exist_ok=True)
+    
+    experiment_path = EXPERIMENT_ROOT / name
+    experiment_path.mkdir(parents=True, exist_ok=True)
 
-        log_path = experiment_path / 'stdout.log'
-        if log_path.exists():
-            log_path.unlink()
+    log_path = experiment_path / 'stdout.log'
+    if log_path.exists():
+        log_path.unlink()
 
-        config_path = experiment_path / 'config.json'
-        if hpc == False:
-            make_config(name)
+    result_path = experiment_path / 'result.txt'
+    if result_path.exists():
+        result_path.unlink()
 
-        with config_path.open() as f:
-            config = json.load(f)
-        print(config)
-        
-        sys.stdout = TeeLogger(log_path, sys.stdout)
-        sys.stderr = TeeLogger(log_path, sys.stderr)
-    else:
-        name = 'tmp'
-        config = {}
+    config_path = experiment_path / 'config.json'
+    if hpc == False:
+        make_config(type=name)
+
+    with config_path.open() as f:
+        config = json.load(f)
+    print(config)
+    
+    sys.stdout = TeeLogger(log_path, sys.stdout)
+    sys.stderr = TeeLogger(log_path, sys.stderr)
     
     privater_config = config.pop('privater', 
                                  {'type': 'gpf_zero_one',
@@ -84,8 +85,10 @@ def main(name, show, debug, gpu, hpc):
                                                  ])
     callbacks = [EvaluaterCallback(Evaluater.from_hp(evaluater_config), dataset, privater) for evaluater_config in evaluaters_config]
     historys = trainer.train(dataset, worker=privater, callbacks=callbacks)
+    result_file = result_path.open('w')
     for i in range(trainer.epochs):
         output = ' '.join([f'{key}: {value[i]}' for key, value in historys.items()])
         print(f'epochs:{i} {output}')
+        result_file.write(f'epochs:{i} {output}\n')
 if __name__ == '__main__':
     main()

@@ -6,7 +6,7 @@ def make_config(type, name=None):
     if name is None:
         name = type
     config_cls = Config.by_name(type)
-    config_ins = config_cls.make_config(name)
+    config_ins = config_cls.make_config()
     config_ins.save(EXPERIMENT_ROOT / f'{name}' / 'config.json')
     return config_ins.config
     
