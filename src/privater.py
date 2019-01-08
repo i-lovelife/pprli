@@ -255,6 +255,7 @@ class CVaeMi(Privater):
                  p_dim=6,
                  global_weight=50,
                  local_weight=150,
+                 rec_x_weight=64*64/10,
                  encrypt_with_noise=True,
                  **args
                  ):
@@ -347,19 +348,31 @@ class CVaeMi(Privater):
         z_f_2_scores = local_dis(z_f_2)
         local_info_loss = Lambda(binary_loss, name='local_info_loss')([z_f_1_scores, z_f_2_scores])
         
-        train_model = Model([x_in, p_in], [gauss_loss, global_info_loss, local_info_loss])
+        decoder = build_decoder(img_dim=img_dim,
+                                z_dim=z_dim+p_dim)
+        rec_x = decoder(Concatenate()([z_samples, p_in]))
+        rec_x = Lambda(lambda x: x, name="rec_x")(rec_x)
+        
+        train_model = Model([x_in, p_in], [rec_x, gauss_loss, global_info_loss, local_info_loss])
         
         train_model.compile(optimizer=self.optimizer,
-                            loss={'prior': identity_loss, 'global_info_loss': identity_loss, 'local_info_loss': identity_loss},
-                            loss_weights={'prior':1, 'global_info_loss':global_weight, 'local_info_loss': local_weight}
+                            loss={'prior': identity_loss, 
+                                  'global_info_loss': identity_loss, 
+                                  'local_info_loss': identity_loss,
+                                  'rec_x': 'mean_squared_error'},
+                            loss_weights={'prior':1, 
+                                          'global_info_loss':global_weight, 
+                                          'local_info_loss': local_weight,
+                                          'rec_x': rec_x_weight}
                             )
         self.encoder = encoder
+        self.decoder = decoder
         self.train_model = train_model
         self.encrypt_with_noise = encrypt_with_noise
     
     def get_input(self, data):
         x, p = data['x'], data['p']
-        return ([x, p], {'prior':x, 'global_info_loss':x, 'local_info_loss': x})
+        return ([x, p], {'rec_x': x, 'prior':x, 'global_info_loss':x, 'local_info_loss': x})
     def predict(self, data):
         x, y, p = data['x'], data['y'], data['p']
         x, _, feature_map = self.encoder.predict([x, p])
@@ -368,6 +381,10 @@ class CVaeMi(Privater):
         return {'x': x, 'y': y, 'p': p}
     def reconstruct(self, data):
         x, y, p = data['x'], data['y'], data['p']
+        x, _, feature_map = self.encoder.predict([x, p])
+        if self.encrypt_with_noise:
+            x = np_gauss_sampling([x, _])
+        x = self.decoder.predict(np.concatenate([x, p], axis=-1))
         return {'x': x, 'y': y, 'p': p}    
     
     
@@ -513,6 +530,76 @@ class AdvModel(Privater):
     def get_input_g(self, data1, data2):
         raise NotImplementedError
 
+        
+@Privater.register('ad_cvae')
+class AdCvae(AdvModel):
+    def __init__(self,
+             img_dim=64,
+             z_dim=128,
+             p_dim=6,
+             rec_x_weight=64*64/10,
+             encrypt_with_noise=True,
+             **args
+             ):
+        super().__init__(**args)
+        def build_c_encoder():
+            encoder = build_encoder(img_dim=img_dim,
+                                    z_dim=2*z_dim,
+                                    use_max_pooling=True, 
+                                    drop_out=-1,
+                                    use_gauss_prior=False)
+            x_in = Input(shape=(img_dim, img_dim, 3))
+            p_in = Input(shape=(p_dim,))
+            z = encoder(x_in)
+            z = Concatenate()([z, p_in])
+            z = Dense(z_dim, activation='relu')(z)
+            z_mean = Dense(z_dim)(z)
+            z_log_var = Dense(z_dim)(z)
+            return Model([x_in, p_in], [z_mean, z_log_var])
+        encoder = build_c_encoder()
+        x_in = Input(shape=(img_dim, img_dim, 3))
+        p_in = Input(shape=(p_dim,))
+        fake_p_in = Input(shape=(p_dim))
+        x = x_in
+        z_mean, z_log_var = encoder([x, p_in])
+        z = Lambda(gauss_sampling)([z_mean, z_log_var])
+        gauss_loss = Lambda(gauss_loss_func, name='prior')([z_mean, z_log_var])
+        decoder = build_decoder(img_dim=img_dim,
+                                z_dim=z_dim+p_dim)
+        rec_x = decoder(Concatenate()([z, p_in]))
+        rec_x = Lambda(lambda x: x, name="rec_x")(rec_x)
+        
+        fake_rec_x = decoder(Concatenate()([z, fake_p_in]))
+        fake_rec_x = Lambda(lambda x: x, name="fake_rec_x")(fake_rec_x)
+        
+        train_model = Model([x_in, p_in], [rec_x, gauss_loss])
+        
+        train_model.compile(optimizer=self.optimizer,
+                            loss={'prior': identity_loss, 'rec_x': 'mean_squared_error'},
+                            loss_weights={'prior':1, 'rec_x': rec_x_weight}
+                            )
+        self.encoder = encoder
+        self.decoder = decoder
+        self.train_model = train_model
+        self.encrypt_with_noise = encrypt_with_noise
+    
+    def get_input(self, data):
+        x, p = data['x'], data['p']
+        return ([x, p], {'prior':x, 'rec_x':x})
+    def predict(self, data):
+        x, y, p = data['x'], data['y'], data['p']
+        x, _ = self.encoder.predict([x, p])
+        if self.encrypt_with_noise:
+            x = np_gauss_sampling([x, _])
+        return {'x': x, 'y': y, 'p': p}
+    def reconstruct(self, data):
+        x, y, p = data['x'], data['y'], data['p']
+        x, _ = self.encoder.predict([x, p])
+        if self.encrypt_with_noise:
+            x = np_gauss_sampling([x, _])
+        x = self.decoder.predict(np.concatenate([x, p], axis=-1))
+        return {'x': x, 'y': y, 'p': p}
+    
 @Privater.register('ad_vae')
 class AdVae(AdvModel):
     def __init__(self,
