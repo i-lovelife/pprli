@@ -40,4 +40,5 @@ class CvaeConfig(Config):
             ]
         }
         return Config(config)
+    
 
