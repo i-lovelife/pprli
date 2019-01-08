@@ -3,8 +3,9 @@
 ROOT_DIR="/project/RDS-FEI-NLH-RW/work/pprli/"
 CONFIG_DIR="$ROOT_DIR/configs/"
 NAME=$1
-ADD_NAME=$(date '+%Y-%m-%d-%H-%M-%S')
-EXPERIMENT_DIR="$ROOT_DIR/experiments/${NAME}-${ADD_NAME}-tune"
+ADD_NAME=${2:-$(date '+%Y-%m-%d-%H-%M-%S')}
+echo $ADD_NAME
+EXPERIMENT_DIR="$ROOT_DIR/experiments/tune-${NAME}-${ADD_NAME}"
 mkdir -p $EXPERIMENT_DIR
 #generate config file
 COMMAND="python $CONFIG_DIR/tune_config.py --type $NAME --name $ADD_NAME"

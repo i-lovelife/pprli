@@ -4,7 +4,7 @@ from configs import Config
 
 def tune_config(type, add_name=''):
     configs = Config.by_name(type).tune_config()
-    EXPERIMENT_DIR = EXPERIMENT_ROOT / f'{type}-{add_name}-tune'
+    EXPERIMENT_DIR = EXPERIMENT_ROOT / f'tune-{type}-{add_name}'
     EXPERIMENT_DIR.mkdir(parents=True, exist_ok=True)
     configs_file_path = EXPERIMENT_DIR / f'configs.list'
     configs_file = configs_file_path.open('w')
