@@ -25,8 +25,8 @@ class AdCvaeConfig(Config):
             },
             "trainer":{
                 "type":"adv",
-                "d_iter":1,
-                "epochs":100
+                "d_iter":2,
+                "epochs":30
             },
             "evaluaters":[
                 {"type":"utility",
@@ -44,8 +44,8 @@ class AdCvaeConfig(Config):
     @classmethod
     def tune_config(cls):
         configs = []
-        for z_dim in [32, 64, 128, 256, 512]:
-            for rec_x_weight in [1, 10, 30, 100, 300, 500, 1000, 3000, 9000, 15000]:
+        for z_dim in [32, 64, 128, 256]:
+            for rec_x_weight in [100, 300, 500, 1000, 3000, 15000]:
                 name = f'{cls.__name__}-z_dim{z_dim}-rec_x{rec_x_weight}'
                 config = cls.make_config(z_dim=z_dim, rec_x_weight=rec_x_weight)
                 configs.append((name, config))
