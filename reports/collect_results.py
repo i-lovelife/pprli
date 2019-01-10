@@ -17,6 +17,8 @@ def analyze(config_names):
         experiment_dir = EXPERIMENT_ROOT / f'{name}'
         result_path = experiment_dir / 'result.txt'
         config_path = experiment_dir / 'config.json'
+        if not result_path.exists():
+            continue
         
         
         config_file = config_path.open('r')
@@ -59,7 +61,8 @@ def analyze(config_names):
 def main(config_list, config):
     if config_list is not None:
         config_list_path = EXPERIMENT_ROOT / config_list
-        config_names = config_list_path.open('w').readlines()
+        config_names = config_list_path.open('r').readlines()
+        config_names = [config_name.strip() for config_name in config_names]
     else:
         config_names = [config]
     analyze(config_names)
