@@ -86,6 +86,7 @@ def build_discriminator(img_dim=64,
         return Model(x_in, [judge, classify])
     return Model(x_in, judge)
 
+
 def build_decoder(img_dim=64,
                   z_dim=128,
                   num_conv=3,
@@ -191,13 +192,14 @@ class CVae(Privater):
                  p_dim=6,
                  rec_x_weight=64*64/10,
                  encrypt_with_noise=True,
+                 random_label=False,
                  **args
                  ):
         super().__init__(**args)
         def build_c_encoder():
             encoder = build_encoder(img_dim=img_dim,
                                     z_dim=2*z_dim,
-                                    use_max_pooling=True, 
+                                    use_max_pooling=True,
                                     drop_out=-1,
                                     use_gauss_prior=False)
             x_in = Input(shape=(img_dim, img_dim, 3))
@@ -217,8 +219,13 @@ class CVae(Privater):
         gauss_loss = Lambda(gauss_loss_func, name='prior')([z_mean, z_log_var])
         decoder = build_decoder(img_dim=img_dim,
                                 z_dim=z_dim+p_dim)
-        rec_x = decoder(Concatenate()([z, p_in]))
+        if random_label:
+            p_use = Lambda(shuffling)(p_in)
+        else:
+            p_use = p_in
+        rec_x = decoder(Concatenate()([z, p_use]))
         rec_x = Lambda(lambda x: x, name="rec_x")(rec_x)
+        
         train_model = Model([x_in, p_in], [rec_x, gauss_loss])
         
         train_model.compile(optimizer=self.optimizer,
@@ -247,6 +254,83 @@ class CVae(Privater):
         x = self.decoder.predict(np.concatenate([x, p], axis=-1))
         return {'x': x, 'y': y, 'p': p}
     
+@Privater.register('cycle_cvae')
+class CycleCvae(Privater):
+    def __init__(self,
+                 img_dim=64,
+                 z_dim=128,
+                 p_dim=6,
+                 real_gauss_loss_weight=1,
+                 fake_gauss_loss_weight=1,
+                 rec_x_weight=64*64/10,
+                 encrypt_with_noise=True,
+                 **args
+                 ):
+        super().__init__(**args)
+        def build_c_encoder():
+            encoder = build_encoder(img_dim=img_dim,
+                                    z_dim=2*z_dim,
+                                    use_max_pooling=True,
+                                    drop_out=-1,
+                                    use_gauss_prior=False)
+            x_in = Input(shape=(img_dim, img_dim, 3))
+            p_in = Input(shape=(p_dim,))
+            z = encoder(x_in)
+            z = Concatenate()([z, p_in])
+            z = Dense(z_dim, activation='relu')(z)
+            z_mean = Dense(z_dim)(z)
+            z_log_var = Dense(z_dim)(z)
+            return Model([x_in, p_in], [z_mean, z_log_var])
+        encoder = build_c_encoder()
+        x_in = Input(shape=(img_dim, img_dim, 3))
+        p_in = Input(shape=(p_dim,))
+        real_p = p_in
+        fake_p = Lambda(shuffling)(p_in)
+        x = x_in
+        z_mean, z_log_var = encoder([x, p_in])
+        z = Lambda(gauss_sampling)([z_mean, z_log_var])
+        real_gauss_loss = Lambda(gauss_loss_func, name='real_gauss_loss')([z_mean, z_log_var])
+        decoder = build_decoder(img_dim=img_dim,
+                                z_dim=z_dim+p_dim)
+        rec_x = decoder(Concatenate()([z, real_p]))
+        rec_x = Lambda(lambda x: x, name="rec_x")(rec_x)
+        
+        fake_rec_x = decoder(Concatenate()([z, fake_p]))
+        fake_rec_z_mean, fake_rec_z_log_var = encoder([fake_rec_x, fake_p])
+        fake_gauss_loss = Lambda(gauss_loss_func, name='fake_gauss_loss')([fake_rec_z_mean, fake_rec_z_log_var])
+        
+        train_model = Model([x_in, p_in], [rec_x, real_gauss_loss, fake_gauss_loss])
+        
+        train_model.compile(optimizer=self.optimizer,
+                            loss={'real_gauss_loss': identity_loss, 
+                                  'fake_gauss_loss': identity_loss,
+                                  'rec_x': 'mean_squared_error'},
+                            loss_weights={'real_gauss_loss': real_gauss_loss_weight,
+                                          'fake_gauss_loss': fake_gauss_loss_weight,
+                                          'rec_x': rec_x_weight}
+                            )
+        self.encoder = encoder
+        self.decoder = decoder
+        self.train_model = train_model
+        self.encrypt_with_noise = encrypt_with_noise
+    
+    def get_input(self, data):
+        x, p = data['x'], data['p']
+        return ([x, p], {'real_gauss_loss':x, 'fake_gauss_loss':x, 'rec_x':x})
+    def predict(self, data):
+        x, y, p = data['x'], data['y'], data['p']
+        x, _ = self.encoder.predict([x, p])
+        if self.encrypt_with_noise:
+            x = np_gauss_sampling([x, _])
+        return {'x': x, 'y': y, 'p': p}
+    def reconstruct(self, data):
+        x, y, p = data['x'], data['y'], data['p']
+        x, _ = self.encoder.predict([x, p])
+        if self.encrypt_with_noise:
+            x = np_gauss_sampling([x, _])
+        x = self.decoder.predict(np.concatenate([x, p], axis=-1))
+        return {'x': x, 'y': y, 'p': p}    
+
 @Privater.register('cvae_mi')
 class CVaeMi(Privater):
     def __init__(self,
@@ -538,6 +622,7 @@ class AdCvae(AdvModel):
              z_dim=128,
              p_dim=6,
              rec_x_weight=64*64/10,
+             prior_weight=1,
              encrypt_with_noise=True,
              **args
              ):
@@ -556,10 +641,18 @@ class AdCvae(AdvModel):
             z_mean = Dense(z_dim)(z)
             z_log_var = Dense(z_dim)(z)
             return Model([x_in, p_in], [z_mean, z_log_var])
+        def build_latent_classifier():
+            z_in = Input(shape=(z_dim,))
+            z = z_in
+            z = Dense(z_dim, activation='relu')(z)
+            z = Dense(z_dim, activation='relu')(z)
+            z = Dense(p_dim, activation='softmax')(z)
+            return Model(z_in, z)
+        
+        classifier = build_latent_classifier()
         encoder = build_c_encoder()
         x_in = Input(shape=(img_dim, img_dim, 3))
         p_in = Input(shape=(p_dim,))
-        fake_p_in = Input(shape=(p_dim))
         x = x_in
         z_mean, z_log_var = encoder([x, p_in])
         z = Lambda(gauss_sampling)([z_mean, z_log_var])
@@ -569,23 +662,49 @@ class AdCvae(AdvModel):
         rec_x = decoder(Concatenate()([z, p_in]))
         rec_x = Lambda(lambda x: x, name="rec_x")(rec_x)
         
-        fake_rec_x = decoder(Concatenate()([z, fake_p_in]))
-        fake_rec_x = Lambda(lambda x: x, name="fake_rec_x")(fake_rec_x)
+        pred_p = classifier(z)
+        pred_p = Lambda(lambda x: x, name="pred_p")(pred_p)
         
-        train_model = Model([x_in, p_in], [rec_x, gauss_loss])
+        #build g_train_model
+        encoder.trainable = True
+        decoder.trainable = True
+        classifier.trainable = False
+        g_train_model = Model([x_in, p_in], [rec_x, pred_p, gauss_loss])
+        g_train_model.compile(optimizer=self.optimizer,
+                              loss={'prior': identity_loss, 
+                                    'rec_x': 'mean_squared_error', 
+                                    'pred_p': 'categorical_crossentropy'},
+                              loss_weights={'prior': prior_weight, 
+                                            'rec_x': rec_x_weight,
+                                            'pred_p': -1},
+                              metrics={'pred_p': 'acc'})
         
-        train_model.compile(optimizer=self.optimizer,
-                            loss={'prior': identity_loss, 'rec_x': 'mean_squared_error'},
-                            loss_weights={'prior':1, 'rec_x': rec_x_weight}
-                            )
+        #build d_train_model
+        encoder.trainable = False
+        decoder.trainable = False
+        classifier.trainable = True
+        d_train_model = Model([x_in, p_in], [pred_p])
+        d_train_model.compile(optimizer=self.optimizer,
+                              loss={'pred_p': 'categorical_crossentropy'},
+                              loss_weights={'pred_p': 1},
+                              metrics={'pred_p': 'acc'})
+        
         self.encoder = encoder
         self.decoder = decoder
-        self.train_model = train_model
+        self.classifier = classifier
+        self.train_model = g_train_model
+        self.g_train_model = g_train_model
+        self.d_train_model = d_train_model
         self.encrypt_with_noise = encrypt_with_noise
     
     def get_input(self, data):
-        x, p = data['x'], data['p']
-        return ([x, p], {'prior':x, 'rec_x':x})
+        pass
+    def get_input_g(self, data1, data2):
+        x1, p1 = data1['x'], data1['p']
+        return ([x1, p1], {'rec_x': x1, 'pred_p': p1, 'prior': x1})
+    def get_input_d(self, data1, data2):
+        x1, p1 = data1['x'], data1['p']
+        return ([x1, p1], {'pred_p': p1})
     def predict(self, data):
         x, y, p = data['x'], data['y'], data['p']
         x, _ = self.encoder.predict([x, p])

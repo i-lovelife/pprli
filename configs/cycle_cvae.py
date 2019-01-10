@@ -1,18 +1,21 @@
 from configs.config import Config
 
-model_name = "cvae"
+model_name = "cycle_cvae"
 @Config.register(model_name)
-class CvaeConfig(Config):
+class CycleCvaeConfig(Config):
     @classmethod
     def make_config(cls,
                     z_dim=64,
-                    rec_x_weight=100,
+                    rec_x_weight=400,
+                    real_gauss_loss_weight=1,
+                    fake_gauss_loss_weight=1,
                     evaluation_verbose=False):
         config={
             "privater":{
                 "type":model_name,
                 "z_dim":z_dim,
-                "random_label":False,
+                "real_gauss_loss_weight":real_gauss_loss_weight,
+                "fake_gauss_loss_weight":fake_gauss_loss_weight,
                 "rec_x_weight":rec_x_weight,
                 "encrypt_with_noise": True,
                 "optimizer":{

@@ -1,19 +1,19 @@
 from configs.config import Config
 
-model_name = "cvae"
-@Config.register(model_name)
-class CvaeConfig(Config):
+model_name = "ad_cvae"
+@Config.register('ad_cvae')
+class AdCvaeConfig(Config):
     @classmethod
     def make_config(cls,
-                    z_dim=64,
+                    z_dim=256,
                     rec_x_weight=100,
                     evaluation_verbose=False):
         config={
             "privater":{
-                "type":model_name,
+                "type": model_name,
                 "z_dim":z_dim,
-                "random_label":False,
                 "rec_x_weight":rec_x_weight,
+                "prior_weight":1,
                 "encrypt_with_noise": True,
                 "optimizer":{
                     "type": "adam",
@@ -24,7 +24,8 @@ class CvaeConfig(Config):
                 "type":"ferg"
             },
             "trainer":{
-                "type":"keras",
+                "type":"adv",
+                "d_iter":1,
                 "epochs":100
             },
             "evaluaters":[
