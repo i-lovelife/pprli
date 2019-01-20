@@ -1,4 +1,5 @@
 from keras.callbacks import Callback as KerasCallback
+from keras.callbacks import ModelCheckpoint as KerasModelCheckpoint
 
 class Callback(KerasCallback):
     def get_output_history(self):
@@ -12,7 +13,7 @@ class EvaluaterCallback(Callback):
         self.output_history = []
     def on_train_begin(self, logs=None):
         self.output_history = []
-    def on_epoch_end(self, epoch, logs=None):
+    def on_epoch_end(self, epoch, logs):
         evaluater = self.evaluater
         dataset = self.dataset
         worker = self.worker
@@ -22,9 +23,11 @@ class EvaluaterCallback(Callback):
         if output is not None:
             print(f'epoch {epoch}: output {type(self.evaluater).__name__} = {output}')
             self.output_history.append(output)
+            logs[type(self.evaluater).__name__] = output
     def get_output_history(self):
         return type(self.evaluater).__name__, self.output_history
 
+    
 class EarlyStopping(Callback):
     def __init__(self,
                  ideal_acc=0.9,
@@ -51,3 +54,8 @@ class EarlyStopping(Callback):
     def on_train_end(self, logs=None):
         if self.stopped_epoch >= 0 and self.verbose is True:
             print(f'Stopped at Epoch {self.stopped_epoch+1}: acc={self.best_acc} val_acc={self.best_val_acc}')
+
+class ModelCheckpoint(KerasModelCheckpoint):
+    def get_output_history(self):
+        pass
+    

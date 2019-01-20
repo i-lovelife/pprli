@@ -630,6 +630,7 @@ class IntroCvae(Privater):
                  fake_gauss_loss_weight=1,
                  rec_x_weight=64*64/10,
                  encrypt_with_noise=True,
+                 energy_bound=5,
                  **args
                  ):
         super().__init__(**args)
@@ -655,7 +656,7 @@ class IntroCvae(Privater):
         x = x_in
         z_mean, z_log_var = encoder([x, p_in])
         z = Lambda(gauss_sampling)([z_mean, z_log_var])
-        real_gauss_loss = Lambda(gauss_loss_func, name='real_gauss_loss')([z_mean, z_log_var])
+        prior_loss = Lambda(gauss_loss_func, name='prior_loss')([z_mean, z_log_var])
         decoder = build_decoder(img_dim=img_dim,
                                 z_dim=z_dim+p_dim)
         rec_x = decoder(Concatenate()([z, real_p]))
@@ -663,7 +664,29 @@ class IntroCvae(Privater):
         
         fake_rec_x = decoder(Concatenate()([z, fake_p]))
         fake_rec_z_mean, fake_rec_z_log_var = encoder([fake_rec_x, fake_p])
-        fake_gauss_loss = Lambda(gauss_loss_func, name='fake_gauss_loss')([fake_rec_z_mean, fake_rec_z_log_var])
+        
+        real_rec_z_mean, real_rec_z_log_var = encoder([rec_x, real_p])
+        
+        def two_gauss_loss_func(args):
+            z1, z_log_var1, z2, z_log_var2 = args
+            return - 0.5 * (1 + z_log_var1 - z_log_var2 - (K.square(z1-z2)+K.exp(z_log_var1))/K.exp(z_log_var2))
+
+        fake_energy = Lambda(two_gauss_loss_func, name='fake_energy')([z_mean, z_log_var, fake_rec_z_mean, fake_rec_z_log_var])
+        real_energy = Lambda(two_gauss_loss_func, name='real_energy')([z_mean, z_log_var, real_rec_z_mean, real_rec_z_log_var])
+        
+        #build d_train_model
+        def d_energy_loss_func(args):
+            real_energy, fake_energy = args
+            return K.mean(K.relu(energy_bound - fake_energy) + real_energy)
+        d_energy_loss = Lambda(d_energy_loss_func, name='d_energy_loss')([real_energy, fake_energy])
+        d_train_model = Model([x_in, p_in], [rec_x, prior_loss, d_energy_loss, real_energy, fake_energy])
+        
+        #build g_train_model
+        def g_energy_loss_func(args):
+            fake_energy = args
+            return K.mean(fake_energy)
+        g_energy_loss = Lambda(g_energy_loss_func, name='g_energy_loss')([fake_energy])
+        g_train_model = Model([x_in, p_in], [rec_x, prior_loss, g_energy_loss, fake_energy])
         
         train_model = Model([x_in, p_in], [rec_x, real_gauss_loss, fake_gauss_loss])
         
@@ -695,7 +718,7 @@ class IntroCvae(Privater):
         if self.encrypt_with_noise:
             x = np_gauss_sampling([x, _])
         x = self.decoder.predict(np.concatenate([x, p], axis=-1))
-        return {'x': x, 'y': y, 'p': p}        
+        return {'x': x, 'y': y, 'p': p}            
         
         
 @Privater.register('ad_cvae')

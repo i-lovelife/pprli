@@ -1,6 +1,6 @@
 from src.util.registerable import Registerable
 from keras.callbacks import Callback
-from src.callbacks import EvaluaterCallback
+from src.callbacks import EvaluaterCallback, ModelCheckpoint
 
 def collect_history(callbacks):
     history = {}
@@ -14,10 +14,11 @@ def collect_history(callbacks):
 
 class Trainer(Registerable):
     _default_type='keras'
-    def __init__(self, epochs=5, batch_size=128, verbose=True):
+    def __init__(self, epochs=5, batch_size=128, verbose=True, save_dir=None):
         self.epochs = epochs
         self.batch_size = batch_size
         self.verbose = verbose
+        self.save_dir = save_dir
     def train(self, datasaet, worker=None, evaluaters=None, callbacks=[]):
         raise NotImplementedError
 
@@ -53,7 +54,7 @@ class AdversarialTrainer(Trainer):
         if worker is None:
             return
         for callback in callbacks:
-            callback.on_train_begin()
+            callback.on_train_begin(worker)
         for epoch in range(self.epochs):
             for iter_no in range(iters_per_epoch):
                 for j in range(self.d_iter):
@@ -66,8 +67,11 @@ class AdversarialTrainer(Trainer):
                     output_g = worker.g_train_model.train_on_batch(*worker.get_input_g(data1, data2))
                 print(f'iter {iter_no}: g_log={output_g} d_log={output_d}')
             epoch_history = {}
+            logs = {}
             for callback in callbacks:
-                callback.on_epoch_end(epoch)
+                callback.on_epoch_end(epoch, logs)
+            if self.save_dir is not None:
+                worker.save_weights(self.save_dir / f'model_weight_{epoch}.hdf5')
         for callback in callbacks:
             callback.on_train_end()
             
@@ -85,6 +89,8 @@ class KerasTrainer(Trainer):
         model:
             train(dataset, epochs, batch_size): train model in dataset for epochs
         """
+        if self.save_dir is not None:
+            callbacks.append(ModelCheckpoint(str(self.save_dir/'model_weight_{epoch}.hdf5'), save_best_only=False, save_weights_only=True))
         train_data = dataset.get_train()
         test_data = dataset.get_test()
         #import pdb;pdb.set_trace()

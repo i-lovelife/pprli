@@ -166,11 +166,11 @@ class FergZeroOne(Ferg):
         }
         return cls(data=data, transform=transform, **args)
     def process(self, data):
-            x, y, p = data['x'], data['y'], data['p']
-            x = x.astype('float32') / 255 - 0.5
-            y = to_categorical(y, num_classes=7)
-            p = to_categorical(p, num_classes=2)
-            return {'x':x, 'y':y, 'p':p}
+        x, y, p = data['x'], data['y'], data['p']
+        x = x.astype('float32') / 255 - 0.5
+        y = to_categorical(y, num_classes=7)
+        p = to_categorical(p, num_classes=2)
+        return {'x':x, 'y':y, 'p':p}
  
 def test_ferg():
     ferg_full = Dataset.by_name('ferg').from_hdf5(select_people=[0, 1, 2, 3, 4, 5])

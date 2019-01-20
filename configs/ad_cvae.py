@@ -6,7 +6,7 @@ class AdCvaeConfig(Config):
     @classmethod
     def make_config(cls,
                     z_dim=256,
-                    rec_x_weight=100,
+                    rec_x_weight=300,
                     evaluation_verbose=False):
         config={
             "privater":{
@@ -25,8 +25,9 @@ class AdCvaeConfig(Config):
             },
             "trainer":{
                 "type":"adv",
-                "d_iter":2,
-                "epochs":30
+                "d_iter":2, 
+                "epochs":30,
+                "save_model":True
             },
             "evaluaters":[
                 {"type":"utility",

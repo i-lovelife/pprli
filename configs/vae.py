@@ -1,17 +1,18 @@
 from configs.config import Config
 
-z_dim=64
-evaluation_verbose=False
-
-@Config.register('vae')
+model_name = "vae"
+@Config.register(model_name)
 class VaeConfig(Config):
     @classmethod
-    def make_config(self, NAME):
+    def make_config(self,
+                    z_dim=256,
+                    rec_x_weight=300,
+                    evaluation_verbose=False):
         config={
             "privater":{
                 "type":"vae",
                 "z_dim":z_dim,
-                "rec_x_weight":100,
+                "rec_x_weight":rec_x_weight,
                 "encrypt_with_noise": True,
                 "optimizer":{
                     "type": "adam",
@@ -23,7 +24,8 @@ class VaeConfig(Config):
             },
             "trainer":{
                 "type":"keras",
-                "epochs":100
+                "epochs":50,
+                "save_model":True
             },
             "evaluaters":[
                 {"type":"utility",
@@ -33,9 +35,6 @@ class VaeConfig(Config):
                 {"type":"private",
                  "z_dim":z_dim,
                  "verbose": evaluation_verbose
-                },
-                {"type":"reconstruction",
-                 "base_dir": NAME
                 }
             ]
         }

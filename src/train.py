@@ -6,7 +6,6 @@ from keras.models import load_model
 from keras.layers import *
 from keras import backend as K
 from keras.optimizers import Adam
-from keras.callbacks import ModelCheckpoint
 
 
 import os
@@ -21,20 +20,22 @@ from src.evaluater import Evaluater
 from src.privater import Privater
 from src import CONFIG_ROOT, EXPERIMENT_ROOT
 from src.util.tee_logging import TeeLogger
-from src.callbacks import EvaluaterCallback
+from src.callbacks import EvaluaterCallback, ModelCheckpoint
 from configs.make_config import make_config
 import importlib
 
 
 @click.command()
-@click.option('--name', default='cvae')
+@click.option('--name', default=None)
+@click.option('--type')
 @click.option('--show/--no-show', default=False)
 @click.option('--debug/--no-debug', default=False)
 @click.option('--hpc/--no-hpc', default=False)
 @click.option('--gpu', type=click.Choice(['0', '1', '2', '3']), default='0')
-def main(name, show, debug, gpu, hpc):
+def main(name, type, show, debug, gpu, hpc):
     os.environ["CUDA_VISIBLE_DEVICES"] = gpu
-    
+    if name is None:
+        name=type
     experiment_path = EXPERIMENT_ROOT / name
     experiment_path.mkdir(parents=True, exist_ok=True)
 
@@ -48,7 +49,7 @@ def main(name, show, debug, gpu, hpc):
 
     config_path = experiment_path / 'config.json'
     if hpc == False:
-        make_config(type=name)
+        make_config(type=type, name=name)
 
     with config_path.open() as f:
         config = json.load(f)
@@ -76,6 +77,9 @@ def main(name, show, debug, gpu, hpc):
     dataset.show_info()
     
     trainer_config = config.pop('trainer', {'type': 'adv', 'epochs':50})
+    save_model = trainer_config.pop('save_model', False)
+    if save_model:
+        trainer_config['save_dir'] = experiment_path
     if debug:
         trainer_config['epochs'] = 2
     trainer = Trainer.from_hp(trainer_config)

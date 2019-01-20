@@ -20,9 +20,9 @@ sns.set_style('darkgrid')
 sns.set_palette('muted')
 #sns.set_context("notebook", font_scale=1.5,
 #                rc={"lines.linewidth": 2.5})
-def scatter(x, colors):
+def scatter(x, colors, num_colors=10):
     # We choose a color palette with seaborn.
-    palette = np.array(sns.color_palette("hls", 10))
+    palette = np.array(sns.color_palette("hls", num_colors))
 
     # We create a scatter plot.
     f = plt.figure(figsize=(8, 8))
@@ -36,7 +36,7 @@ def scatter(x, colors):
 
     # We add the labels for each digit.
     txts = []
-    for i in range(10):
+    for i in range(num_colors):
         # Position of each label.
         xtext, ytext = np.median(x[colors == i, :], axis=0)
         txt = ax.text(xtext, ytext, str(i), fontsize=24)
@@ -47,10 +47,10 @@ def scatter(x, colors):
 
     return f, ax, sc, txts
 
-def visualize(x, y):
+def visualize(x, y, name='tmp.png', num_colors=10):
     x_embedded = TSNE(n_components=2).fit_transform(x)
-    scatter(x_embedded, y)
-    plt.savefig('tmp.png')
+    scatter(x_embedded, y, num_colors=num_colors)
+    plt.savefig(name)
     
 if __name__ == '__main__':
     digits = load_digits()

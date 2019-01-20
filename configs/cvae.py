@@ -5,9 +5,10 @@ model_name = "cvae"
 class CvaeConfig(Config):
     @classmethod
     def make_config(cls,
-                    z_dim=64,
+                    z_dim=256,
                     rec_x_weight=100,
-                    evaluation_verbose=False):
+                    evaluation_verbose=False,
+                    evaluation_epoch=10):
         config={
             "privater":{
                 "type":model_name,
@@ -25,15 +26,24 @@ class CvaeConfig(Config):
             },
             "trainer":{
                 "type":"keras",
-                "epochs":100
+                "epochs":50,
+                "save_model":True
             },
             "evaluaters":[
                 {"type":"utility",
-                 "z_dim":z_dim,
+                 "epochs":evaluation_epoch,
                  "verbose": evaluation_verbose
                 },
                 {"type":"private",
-                 "z_dim":z_dim,
+                 "epochs":evaluation_epoch,
+                 "verbose": evaluation_verbose
+                },
+                {"type":"ssim",
+                 "epochs": evaluation_epoch,
+                 "verbose": evaluation_verbose
+                },
+                {"type":"ndm",
+                 "epochs": evaluation_epoch,
                  "verbose": evaluation_verbose
                 }
             ]
